@@ -1,0 +1,6 @@
+#!/bin/sh
+# Refresh SpringBoard's icon cache so the app appears without a respring (Cydia also does this itself).
+if [ -x /usr/bin/uicache ]; then
+    su mobile -c /usr/bin/uicache >/dev/null 2>&1 || /usr/bin/uicache >/dev/null 2>&1 || true
+fi
+exit 0

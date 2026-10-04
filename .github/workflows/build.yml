@@ -1,4 +1,4 @@
-name: Build RetroTok (iOS 6, armv7)
+name: Build LegacyTikTok (iOS 6, armv7)
 
 on:
   push:
@@ -86,6 +86,15 @@ jobs:
       - name: Generate icons and launch images
         run: python3 tools/gen_assets.py
 
+      - name: Fetch mbedTLS
+        run: ./tools/fetch_mbedtls.sh
+
+      - name: Test network core against TikTok (desktop build of src/rt_http.c)
+        continue-on-error: true
+        run: |
+          ./tools/http_test.sh
+          obj/http_test/http_test Resources/roots.pem https://api19-core-c-useast1a.tiktokv.com/ /dev/null
+
       - name: Build
         run: |
           set -o pipefail
@@ -97,13 +106,13 @@ jobs:
           set -e
           VERSION=$(grep '^Version:' control | cut -d' ' -f2)
           rm -rf /tmp/ipa && mkdir -p /tmp/ipa/Payload
-          cp -a .theos/_/Applications/RetroTok.app /tmp/ipa/Payload/
-          (cd /tmp/ipa && zip -qr9 "$GITHUB_WORKSPACE/ios/packages/RetroTok-$VERSION.ipa" Payload)
+          cp -a .theos/_/Applications/LegacyTikTok.app /tmp/ipa/Payload/
+          (cd /tmp/ipa && zip -qr9 "$GITHUB_WORKSPACE/ios/packages/LegacyTikTok-$VERSION.ipa" Payload)
           ls -la packages/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RetroTok-packages
+          name: LegacyTikTok-packages
           path: |
             ios/packages/*.ipa
             ios/packages/*.deb

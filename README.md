@@ -1,55 +1,64 @@
-# RetroTok - TikTok for iOS 6
+# LegacyTikTok - a standalone TikTok client for iOS 6
 
-A retro TikTok viewer for jailbroken iOS 6 (armv7, built for the iPhone 4S, runs on any iOS 6 device). It's a native
-Objective-C app in the iOS 6 style: glossy black bars, a linen background and code-drawn icons. The app shows a
-full-screen **For You** feed: swipe up for the next video, videos loop, tap to pause, and covers show as thumbnails
-while a video loads.
+A retro TikTok viewer for jailbroken iOS 6 (armv7, built for the iPhone 4S on iOS 6.1.3). It's a native Objective-C
+app in the iOS 6 style that **talks to TikTok directly**. There is no proxy, server or computer involved.
 
 Not affiliated with TikTok or ByteDance. It only shows public content. No login is needed.
+
+> **Status: V1 milestone 1.** The app currently opens a **V1 Test** screen that runs the whole direct pipeline once
+> and logs every step: mbedTLS handshake, aweme feed request, JSON parse, one video URL, download to the local cache,
+> then looping AVPlayer playback. The swipeable 12-video feed with prefetching comes once this works on a real 4S.
 
 ## How it works
 
 ```
-iPhone (iOS 6)  --plain HTTP/JSON-->  RetroTok server (your PC / Raspberry Pi)  --modern TLS-->  TikTok
+iPhone 4S (iOS 6.1.3)
+  -> mbedTLS (bundled, TLS 1.2) with bundled root certificates (Resources/roots.pem)
+  -> https://api19-core-c-useast1a.tiktokv.com/aweme/v1/feed/   (legacy mobile app API: no login, cookies or signature)
+  -> JSON parsed on the phone -> H.264 rendition picked (<= 576 wide, no HEVC), JPEG covers
+  -> MP4 downloaded straight from TikTok's CDN (v16m.tiktokcdn.com first) into the cache folder
+  -> AVPlayer plays the local file and loops it
 ```
 
-iOS 6 can't talk to TikTok itself. Its TLS is too old, TikTok only answers clients that look like a current Chrome,
-and many TikTok videos use codecs (H.265) that iOS 6 can't decode. The **server** does that part:
+- **Why mbedTLS:** TikTok's certificates chain to DigiCert Global Root G2 (API) and G3 (CDN). Those roots are newer
+  than iOS 6, so the system TLS stack rejects them. The app bundles mbedTLS 3.6 and its own root list instead. It
+  verifies the certificate chain and host name itself, and falls back to nothing insecure.
+- **Why a cache file:** AVPlayer can only use the system TLS stack. So each video is downloaded through mbedTLS first,
+  then played from disk.
+- **Empty answers:** about half of TikTok's feed answers have an empty body. The app retries up to 6 times.
+- **Layers:** `rt_http.c` (plain C: HTTP/1.1 over mbedTLS, redirects, chunked encoding, streaming to file) ->
+  `RTHTTPClient` (Objective-C, gzip) -> `RTAwemeAPI` (the only TikTok-specific code, behind the `RTFeedSource`
+  protocol) -> `RTVideoCache` -> UI. If the endpoint changes, only `RTAwemeAPI` needs replacing.
+- **Risk:** this is TikTok's unofficial legacy app API, and TikTok can change or close it at any time.
 
-- It loads the For You / Explore feed, creator videos and comments through `curl_cffi` (with Chrome impersonation)
-  and `yt-dlp`.
-- It converts every video with ffmpeg into an MP4 iOS 6 can play: H.264 + AAC, with `faststart`.
-  - `hq` (the default): Main 3.1, 540x960. For the iPhone 4/4S/5 and iPads.
-  - `compat`: Baseline 3.0, 432x768. For every iOS 6 device, including the 3GS.
-- It prepares the next videos ahead of time, and caches covers and avatars as small JPEGs.
+The old server-based version lives in [`server/`](server/README.md) as an **optional fallback**. The app does not
+need it, and neither the build nor the .deb depends on it.
 
-When TikTok changes something, update `yt-dlp` / `curl_cffi` on the server. The app does not need rebuilding.
+## Install (Cydia / dpkg)
 
-## 1. Run the server
-
-Needs Python 3.9+ and ffmpeg.
+Get `nl.retrotok.legacytiktok_*_iphoneos-arm.deb` from the CI artifacts (`LegacyTikTok-packages`), or build it
+yourself (see below).
 
 ```sh
-cd server
-pip install -r requirements.txt
-python3 -m retrotok                 # port 8460; prints the LAN address to enter in the app
-python3 -m retrotok --profile compat --key mysecret   # optional: Baseline video, require an access key
+scp nl.retrotok.legacytiktok_0.2.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
+ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.2.0_iphoneos-arm.deb
 ```
 
-Settings can also come from the environment: `RETROTOK_PORT`, `RETROTOK_DATA`, `RETROTOK_PROFILE`, `RETROTOK_KEY`
-and `RETROTOK_CACHE_GB` (the video cache size, 2 GB by default).
+Or open the .deb in iFile and tap Install. The package:
+- installs only `/Applications/LegacyTikTok.app` (binary, Info.plist, icons, launch images, `roots.pem`);
+- depends only on `firmware (>= 6.0)`;
+- runs `uicache` after install/remove, so the icon appears and disappears without a respring;
+- on removal (`dpkg -r nl.retrotok.legacytiktok` or Cydia), also deletes what the app created:
+  `/var/mobile/Library/Caches/nl.retrotok.legacytiktok` (downloaded videos, at most 24 kept) and
+  `/var/mobile/Library/Preferences/nl.retrotok.legacytiktok.plist`.
 
-## 2. Install the app
+An `.ipa` of the same app is also built, for testing.
 
-Download `nl.retrotok.app_*.deb` (from the CI artifacts, or build it yourself, see below) and copy it to the phone:
+### Reporting the milestone 1 test
 
-```sh
-scp nl.retrotok.app_0.1.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
-ssh root@<iphone-ip> "dpkg -i /tmp/nl.retrotok.app_0.1.0_iphoneos-arm.deb && su mobile -c uicache"
-```
-
-Or open the .deb with iFile and tap Install. Then open RetroTok, go to **Settings**, and enter the server
-address (e.g. `192.168.1.20`; the port 8460 is added for you).
+Open LegacyTikTok. The **Test** tab runs automatically; tap **Run** to repeat. When it finishes (or fails), tap
+**Copy Log** and paste the log into a message. It shows which step failed, the TLS version and cipher, and the
+download speed.
 
 ## Build the app yourself
 
@@ -60,33 +69,26 @@ builds on Linux.
 export THEOS=~/theos            # with toolchain/linux/iphone and sdks/iPhoneOS9.3.sdk
 cd ios
 python3 tools/gen_assets.py     # icon + launch images (Pillow)
+./tools/fetch_mbedtls.sh        # mbedTLS 3.6.7 -> vendor/mbedtls with the iOS 6 config (make also does this)
 make package FINALPACKAGE=1     # -> ios/packages/*.deb
 ```
 
-The app uses only frameworks that exist on iOS 6: UIKit, Foundation, CoreGraphics, QuartzCore, AVFoundation and
-CoreMedia. `-Wunguarded-availability` is an error for app code, so any API newer than iOS 6.0 fails the build.
+`tools/http_test.sh` builds the same network core (`src/rt_http.c` + mbedTLS) as a desktop command-line tool. Use
+it to test TikTok's endpoints from a computer with exactly the TLS the phone uses:
+`obj/http_test/http_test Resources/roots.pem <url> out.bin "User-Agent: ..."`.
+
+The app links only iOS 6 frameworks: UIKit, Foundation, CoreGraphics, QuartzCore, AVFoundation, CoreMedia,
+Security (for `SecRandomCopyBytes`), plus libz. `-Wunguarded-availability` catches app code that uses an API newer
+than iOS 6.0, and mbedTLS uses `gettimeofday` instead of `clock_gettime`, which needs iOS 10.
 GitHub Actions (`.github/workflows/build.yml`) builds the .deb and an .ipa on every push.
 
 ## Roadmap
 
 | version | what | status |
 |---------|------|--------|
-| V1 | For You feed, vertical swiping, playback, thumbnails, settings | **this version** |
-| V2 | creator profiles, comments | server endpoints ready |
-| V3 | likes / favorites | server endpoints ready (stored on your server) |
+| V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | **milestone 1 (pipeline test) in progress** |
+| V2 | creator profiles, comments | |
+| V3 | likes / favorites | |
 | V4 | search | |
 | V5 | login | |
-| V6 | uploads | server side via the official TikTok Content Posting API (needs a TikTok developer app) |
-
-## Server API (for the app)
-
-| path | returns |
-|------|---------|
-| `GET /api/status` | version, video profile |
-| `GET /api/feed/foryou` | `{items:[{id, author, nickname, desc, cover, avatar, video, likes, comments, shares, plays, music, ...}]}` |
-| `GET /api/prepare/<id>` | waits until the iOS 6 MP4 exists: `{ready, video}` |
-| `POST /api/prefetch` | `{ids:[...]}`, converts these in the background |
-| `GET /media/video/<id>.mp4` | the converted video (Range supported) |
-| `GET /media/cover/<id>.jpg`, `/media/avatar/<user>.jpg` | thumbnails |
-| `GET /api/user/<name>`, `/api/video/<id>/comments` | profile + videos, comments (V2) |
-| `/api/likes`, `/api/following` | local likes / follows (V3) |
+| V6 | uploads | |

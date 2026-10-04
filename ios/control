@@ -1,8 +1,8 @@
-Package: nl.retrotok.app
-Name: RetroTok
-Version: 0.1.0
+Package: nl.retrotok.legacytiktok
+Name: LegacyTikTok
+Version: 0.2.0
 Architecture: iphoneos-arm
-Description: Retro TikTok viewer for iOS 6: a full-screen For You feed with swipe-to-next and looping playback. Needs the RetroTok server on your own computer or Raspberry Pi.
+Description: Standalone TikTok viewer for iOS 6 (armv7). Talks to TikTok directly with its own TLS (mbedTLS); no server or computer needed.
 Maintainer: milan-wamelink
 Author: milan-wamelink
 Section: Multimedia

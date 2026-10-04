@@ -1,0 +1,12 @@
+#!/bin/sh
+# dpkg removes /Applications/LegacyTikTok.app itself; also remove what the app created at runtime.
+case "$1" in
+    remove|purge)
+        rm -rf /var/mobile/Library/Caches/nl.retrotok.legacytiktok
+        rm -f /var/mobile/Library/Preferences/nl.retrotok.legacytiktok.plist
+        if [ -x /usr/bin/uicache ]; then
+            su mobile -c /usr/bin/uicache >/dev/null 2>&1 || /usr/bin/uicache >/dev/null 2>&1 || true
+        fi
+        ;;
+esac
+exit 0
