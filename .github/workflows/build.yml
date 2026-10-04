@@ -1,0 +1,99 @@
+name: Build RetroTok (iOS 6, armv7)
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  THEOS: /home/runner/theos
+  THEOS_CACHE_KEY: theos-linux-clang11-sdk93-v1
+
+jobs:
+  server:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and import-check the server
+        working-directory: server
+        run: |
+          pip install -r requirements.txt
+          python -m compileall -q retrotok
+          python -c "from retrotok.app import create_app; import tempfile; app = create_app(tempfile.mkdtemp()); print(app.test_client().get('/api/status').json)"
+
+  app:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential fakeroot rsync curl perl zip unzip git libxml2 xz-utils python3-pil libplist-utils libtinfo5 || \
+          sudo apt-get install -y --no-install-recommends \
+            build-essential fakeroot rsync curl perl zip unzip git libxml2 xz-utils python3-pil libplist-utils
+
+      - name: Restore Theos cache
+        id: theos-cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/theos
+          key: ${{ env.THEOS_CACHE_KEY }}
+
+      - name: Install Theos, toolchain and iOS 9.3 SDK
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          mkdir -p "$THEOS/toolchain" "$THEOS/sdks"
+          curl -sSL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C "$THEOS/toolchain/"
+          if [ ! -x "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
+            CLANG=$(find "$THEOS/toolchain" -type f -name clang -path '*/bin/*' | head -n1)
+            mkdir -p "$THEOS/toolchain/linux"
+            ln -sfn "$(dirname "$(dirname "$CLANG")")" "$THEOS/toolchain/linux/iphone"
+          fi
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/sdks
+          (cd /tmp/sdks && git sparse-checkout set iPhoneOS9.3.sdk)
+          mv /tmp/sdks/iPhoneOS9.3.sdk "$THEOS/sdks/"
+
+      - name: Use the distro plistutil
+        run: |
+          [ -x /usr/bin/plistutil ] && ln -sf /usr/bin/plistutil "$THEOS/toolchain/linux/iphone/bin/plistutil" || true
+
+      - name: Generate icons and launch images
+        run: python3 tools/gen_assets.py
+
+      - name: Build
+        run: |
+          set -o pipefail
+          export PATH="$THEOS/toolchain/linux/iphone/bin:$THEOS/bin:$PATH"
+          make package FINALPACKAGE=1 -j"$(nproc)" -k 2>&1 | grep -v "ld: warning: building for iOS, but linking in .tbd" | tee build.log
+
+      - name: Make IPA
+        run: |
+          set -e
+          VERSION=$(grep '^Version:' control | cut -d' ' -f2)
+          rm -rf /tmp/ipa && mkdir -p /tmp/ipa/Payload
+          cp -a .theos/_/Applications/RetroTok.app /tmp/ipa/Payload/
+          (cd /tmp/ipa && zip -qr9 "$GITHUB_WORKSPACE/ios/packages/RetroTok-$VERSION.ipa" Payload)
+          ls -la packages/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RetroTok-packages
+          path: |
+            ios/packages/*.ipa
+            ios/packages/*.deb
+          if-no-files-found: error

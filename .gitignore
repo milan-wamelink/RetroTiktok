@@ -1,0 +1,11 @@
+ios/.theos/
+ios/obj/
+ios/packages/
+ios/Resources/Icon*.png
+ios/Resources/Default*.png
+*.ipa
+*.deb
+__pycache__/
+*.pyc
+server/data/
+.DS_Store
