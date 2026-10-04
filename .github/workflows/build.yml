@@ -72,6 +72,17 @@ jobs:
         run: |
           [ -x /usr/bin/plistutil ] && ln -sf /usr/bin/plistutil "$THEOS/toolchain/linux/iphone/bin/plistutil" || true
 
+      - name: Stub libSystem re-exports missing from the packaged SDK
+        run: |
+          SDK="$THEOS/sdks/iPhoneOS9.3.sdk"
+          for lib in $(grep -o "/usr/lib/system/lib[A-Za-z0-9_]*\.dylib" "$SDK/usr/lib/libSystem.tbd" | sort -u); do
+            base="${lib%.dylib}"
+            if [ ! -f "$SDK$base.tbd" ] && [ ! -f "$SDK$lib" ]; then
+              printf -- '---\narchs:           [ armv7, armv7s, arm64 ]\nplatform:        ios\ninstall-name:    %s\ncurrent-version: 1.0\ncompatibility-version: 1.0\nexports:\n  - archs:           [ armv7, armv7s, arm64 ]\n    symbols:         [ ]\n...\n' "$lib" > "$SDK$base.tbd"
+              echo "stubbed $lib"
+            fi
+          done
+
       - name: Generate icons and launch images
         run: python3 tools/gen_assets.py
 
