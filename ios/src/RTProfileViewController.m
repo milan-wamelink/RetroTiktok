@@ -6,8 +6,16 @@
 
 static const CGFloat kRTGridGap = 1;
 
+@interface RTGridTile : UIButton
+@property (nonatomic, strong) UIImageView *cover;
+@property (nonatomic, strong) UILabel *plays;
+@end
+
+@implementation RTGridTile
+@end
+
 @interface RTGridCell : UITableViewCell
-@property (nonatomic, strong) NSArray *tiles;   // UIButtons; subview tag 1 = cover, tag 2 = play count
+@property (nonatomic, strong) NSArray *tiles;   // RTGridTile; tile.tag = item index
 @end
 
 @implementation RTGridCell
@@ -20,24 +28,22 @@ static const CGFloat kRTGridGap = 1;
         self.contentView.backgroundColor = [UIColor clearColor];
         NSMutableArray *tiles = [NSMutableArray array];
         for (int i = 0; i < 3; i++) {
-            UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+            RTGridTile *b = [RTGridTile buttonWithType:UIButtonTypeCustom];
             b.backgroundColor = [UIColor colorWithWhite:0.16 alpha:1];
             b.clipsToBounds = YES;
-            UIImageView *cover = [[UIImageView alloc] init];
-            cover.tag = 1;
-            cover.contentMode = UIViewContentModeScaleAspectFill;
-            cover.clipsToBounds = YES;
-            cover.userInteractionEnabled = NO;
-            [b addSubview:cover];
-            UILabel *plays = [[UILabel alloc] init];
-            plays.tag = 2;
-            plays.backgroundColor = [UIColor clearColor];
-            plays.textColor = [UIColor whiteColor];
-            plays.shadowColor = [UIColor colorWithWhite:0 alpha:0.8];
-            plays.shadowOffset = CGSizeMake(0, 1);
-            plays.font = [UIFont boldSystemFontOfSize:11];
-            plays.userInteractionEnabled = NO;
-            [b addSubview:plays];
+            b.cover = [[UIImageView alloc] init];
+            b.cover.contentMode = UIViewContentModeScaleAspectFill;
+            b.cover.clipsToBounds = YES;
+            b.cover.userInteractionEnabled = NO;
+            [b addSubview:b.cover];
+            b.plays = [[UILabel alloc] init];
+            b.plays.backgroundColor = [UIColor clearColor];
+            b.plays.textColor = [UIColor whiteColor];
+            b.plays.shadowColor = [UIColor colorWithWhite:0 alpha:0.8];
+            b.plays.shadowOffset = CGSizeMake(0, 1);
+            b.plays.font = [UIFont boldSystemFontOfSize:11];
+            b.plays.userInteractionEnabled = NO;
+            [b addSubview:b.plays];
             [self.contentView addSubview:b];
             [tiles addObject:b];
         }
@@ -51,10 +57,10 @@ static const CGFloat kRTGridGap = 1;
     [super layoutSubviews];
     CGFloat side = floor((self.contentView.bounds.size.width - 2 * kRTGridGap) / 3);
     for (NSUInteger i = 0; i < self.tiles.count; i++) {
-        UIButton *b = self.tiles[i];
+        RTGridTile *b = self.tiles[i];
         b.frame = CGRectMake(i * (side + kRTGridGap), 0, side, side);
-        [b viewWithTag:1].frame = b.bounds;
-        [b viewWithTag:2].frame = CGRectMake(5, side - 19, side - 10, 16);
+        b.cover.frame = b.bounds;
+        b.plays.frame = CGRectMake(5, side - 19, side - 10, 16);
     }
 }
 
@@ -321,15 +327,15 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
     RTGridCell *cell = [tableView dequeueReusableCellWithIdentifier:@"grid"];
     if (!cell) cell = [[RTGridCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"grid"];
     for (NSUInteger col = 0; col < 3; col++) {
-        UIButton *tile = cell.tiles[col];
+        RTGridTile *tile = cell.tiles[col];
         NSUInteger idx = (NSUInteger)indexPath.row * 3 + col;
         tile.hidden = idx >= self.items.count;
         if (tile.hidden) continue;
         NSDictionary *item = self.items[idx];
         tile.tag = (NSInteger)idx;
         [tile addTarget:self action:@selector(tileTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [[RTImageLoader shared] loadPath:RTStr(item[@"thumb_url"]) into:(UIImageView *)[tile viewWithTag:1] placeholder:nil];
-        ((UILabel *)[tile viewWithTag:2]).text = [@"\u25B8 " stringByAppendingString:RTShortCount(RTNum(item[@"plays"]))];
+        [[RTImageLoader shared] loadPath:RTStr(item[@"thumb_url"]) into:tile.cover placeholder:nil];
+        tile.plays.text = [@"\u25B8 " stringByAppendingString:RTShortCount(RTNum(item[@"plays"]))];
     }
     return cell;
 }
