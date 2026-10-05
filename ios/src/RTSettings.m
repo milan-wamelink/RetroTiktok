@@ -55,4 +55,13 @@
     [[NSUserDefaults standardUserDefaults] setInteger:mb forKey:@"cacheLimitMB"];
 }
 
++ (BOOL)playerDebug
+{
+    return [[NSUserDefaults standardUserDefaults] boolForKey:@"playerDebug"];
+}
++ (void)setPlayerDebug:(BOOL)on
+{
+    [[NSUserDefaults standardUserDefaults] setBool:on forKey:@"playerDebug"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
+}
 @end

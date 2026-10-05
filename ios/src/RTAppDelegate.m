@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "RTFeedViewController.h"
 #import "RTSettingsViewController.h"
+#import "RTFavoritesViewController.h"
 #import "RTTheme.h"
 #import "RTVideoCache.h"
 
@@ -27,9 +28,10 @@
 
     // The pipeline test (RTMilestoneViewController) lives under Settings.
     UINavigationController *feed = [[UINavigationController alloc] initWithRootViewController:[[RTFeedViewController alloc] init]];
+    UINavigationController *favorites = [[UINavigationController alloc] initWithRootViewController:[[RTFavoritesViewController alloc] init]];
     UINavigationController *settings = [[UINavigationController alloc] initWithRootViewController:[[RTSettingsViewController alloc] init]];
     RTTabBarController *tabs = [[RTTabBarController alloc] init];
-    tabs.viewControllers = @[ feed, settings ];
+    tabs.viewControllers = @[ feed, favorites, settings ];
 
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.window.rootViewController = tabs;

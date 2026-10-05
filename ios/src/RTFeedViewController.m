@@ -6,6 +6,7 @@
 #import "RTVideoPage.h"
 #import "RTProfileViewController.h"
 #import "RTCommentsViewController.h"
+#import "RTFavorites.h"
 
 @interface RTFeedViewController () <UIScrollViewDelegate, RTVideoPageDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UIScrollView *scroll;
@@ -25,6 +26,7 @@
 @property (nonatomic, assign) NSInteger startIndex;
 @property (nonatomic, assign) BOOL subFeed;
 @property (nonatomic, assign) BOOL releasedPlayers;
+@property (nonatomic, strong) NSTimer *debugTimer;
 @end
 
 @implementation RTFeedViewController
@@ -39,6 +41,7 @@
         _source = [RTAwemeAPI shared];
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self selector:@selector(settingsChanged) name:RTSettingsDidChangeNotification object:nil];
+        [nc addObserver:self selector:@selector(favoritesChanged) name:RTLikesDidChangeNotification object:nil];
         [nc addObserver:self selector:@selector(pausePlayback) name:UIApplicationWillResignActiveNotification object:nil];
         [nc addObserver:self selector:@selector(resumePlayback) name:UIApplicationDidBecomeActiveNotification object:nil];
     }
@@ -136,6 +139,7 @@
 {
     [super viewDidAppear:animated];
     self.visible = YES;
+    [self startDebugTimer];
     if (self.releasedPlayers) {
         self.releasedPlayers = NO;
         [self pageSettled];
@@ -145,12 +149,14 @@
     [self resumePlayback];
 }
 
-// A profile (and its player) was pushed over this feed. The A5 only renders a few AVPlayer videos at once, so a
+// A profile (and its player) was pushed over this feed, or another tab (Favorites has its own player) was chosen. The A5 only renders a few AVPlayer videos at once, so a
 // pushed player that has to share with our paused ones can stay black. Release ours; the files stay cached.
 - (void)viewDidDisappear:(BOOL)animated
 {
     [super viewDidDisappear:animated];
-    if (self.navigationController && self.navigationController.topViewController != self) {
+    UINavigationController *nav = self.navigationController;
+    BOOL otherTab = nav.tabBarController && nav.tabBarController.selectedViewController != nav;
+    if (nav && (nav.topViewController != self || otherTab)) {
         for (RTVideoPage *page in self.pages) [page unload];
         self.releasedPlayers = YES;
     }
@@ -160,6 +166,8 @@
 {
     [super viewWillDisappear:animated];
     self.visible = NO;
+    [self.debugTimer invalidate];
+    self.debugTimer = nil;
     [self pausePlayback];
 }
 
@@ -196,6 +204,27 @@
 - (void)settingsChanged
 {
     for (RTVideoPage *page in self.pages) [page applySound];
+    [self startDebugTimer];
+}
+
+// The timer retains self, so it only runs while this feed is on screen.
+- (void)startDebugTimer
+{
+    [self.debugTimer invalidate];
+    self.debugTimer = nil;
+    [self debugTick];
+    if ([RTSettings playerDebug] && self.visible)
+        self.debugTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(debugTick) userInfo:nil repeats:YES];
+}
+
+- (void)debugTick
+{
+    for (RTVideoPage *page in self.pages) [page updateDebug];
+}
+
+- (void)favoritesChanged
+{
+    for (RTVideoPage *page in self.pages) [page updateCounts];
 }
 
 - (void)refresh
@@ -272,6 +301,8 @@
             page.frame = CGRectMake(0, i * size.height, size.width, size.height);
         }
     }
+    // A page without a video still sits at its loadView frame (0,0), on top of the first video.
+    for (RTVideoPage *page in self.pages) page.hidden = page.index < 0;
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -347,7 +378,7 @@
 
 - (void)videoPageWantsLike:(RTVideoPage *)page
 {
-    RTAlert(@"Likes", @"Likes and favorites arrive in version 3.");
+    if (page.item) [[RTFavorites shared] toggleItem:page.item];
 }
 
 - (void)videoPageWantsComments:(RTVideoPage *)page

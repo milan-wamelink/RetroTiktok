@@ -5,7 +5,7 @@
 //
 // Item keys: id, desc, author, nickname, avatar_url, cover_url, video_urls (NSArray of http(s) URL strings, best
 // mirror first), width, height, duration (seconds), likes, comments, shares, plays, music, music_author, web_url,
-// sec_uid (the author's profile id), thumb_url (small square cover, profile grids only).
+// sec_uid (the author's profile id), create_time (unix seconds), thumb_url (small square cover, profile grids only).
 typedef void (^RTFeedLog)(NSString *line);
 typedef void (^RTFeedHandler)(NSArray *items, NSError *error);
 

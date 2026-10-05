@@ -5,9 +5,10 @@ app in the iOS 6 style that **talks to TikTok directly**. There is no proxy, ser
 
 Not affiliated with TikTok or ByteDance. It only shows public content. No login is needed.
 
-> **Status: V2 (0.4.0) in testing.** V1 (0.3.1: swipeable direct For You feed, cached playback, prefetch, size-capped
-> cache) runs smoothly on a real iPhone 4S / iOS 6.1.3. V2 adds **creator profiles** (tap the avatar or @name) and
-> **comments** (tap the comment button). The pipeline test is still under **Settings > Pipeline Test**.
+> **Status: V3 (0.5.0) in testing.** V1 (0.3.1: swipeable direct For You feed, cached playback, prefetch, size-capped
+> cache) and V2 (0.4.0: **creator profiles** and **comments**) run on a real iPhone 4S / iOS 6.1.3. V3 adds local
+> **favorites**: the heart saves a video's details on the phone (not the video), listed under the **Favorites** tab;
+> playing one fetches fresh links from TikTok and downloads it again. The pipeline test is under **Settings > Pipeline Test**.
 
 ## How it works
 
@@ -49,8 +50,8 @@ Get `nl.retrotok.legacytiktok_*_iphoneos-arm.deb` from the CI artifacts (`Legacy
 yourself (see below).
 
 ```sh
-scp nl.retrotok.legacytiktok_0.4.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
-ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.4.0_iphoneos-arm.deb
+scp nl.retrotok.legacytiktok_0.5.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
+ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.5.0_iphoneos-arm.deb
 ```
 
 Or open the .deb in iFile and tap Install. The package:
@@ -97,8 +98,8 @@ GitHub Actions (`.github/workflows/build.yml`) builds the .deb and an .ipa on ev
 | version | what | status |
 |---------|------|--------|
 | V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | done (0.3.1, tested on a 4S) |
-| V2 | creator profiles, comments | **0.4.0 in testing** |
-| V3 | likes / favorites | |
+| V2 | creator profiles, comments | 0.4.0 |
+| V3 | local favorites (saved on the phone; real likes need a login) | **0.5.0 in testing** |
 | V4 | search | |
 | V5 | login | |
 | V6 | uploads | |
