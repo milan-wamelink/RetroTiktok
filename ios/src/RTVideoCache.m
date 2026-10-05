@@ -93,6 +93,11 @@ typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
 
 - (void)prune
 {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{ [self pruneNow]; });
+}
+
+- (void)pruneNow
+{
     NSString *dir = [RTVideoCache cacheDirectory];
     NSFileManager *fm = [NSFileManager defaultManager];
     NSMutableArray *files = [NSMutableArray array];

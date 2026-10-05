@@ -41,8 +41,8 @@ Get `nl.retrotok.legacytiktok_*_iphoneos-arm.deb` from the CI artifacts (`Legacy
 yourself (see below).
 
 ```sh
-scp nl.retrotok.legacytiktok_0.3.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
-ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.3.0_iphoneos-arm.deb
+scp nl.retrotok.legacytiktok_0.3.1_iphoneos-arm.deb root@<iphone-ip>:/tmp/
+ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.3.1_iphoneos-arm.deb
 ```
 
 Or open the .deb in iFile and tap Install. The package:

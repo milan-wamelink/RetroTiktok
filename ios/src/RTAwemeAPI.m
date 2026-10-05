@@ -53,39 +53,46 @@ static const int kRTAwemeAttempts = 6;
 {
     NSDictionary *headers = @{ @"User-Agent": kRTAwemeUA, @"Accept": @"application/json" };
     [[RTHTTPClient shared] GET:[self feedURLRefresh:refresh] headers:headers handler:^(RTHTTPResponse *resp, NSError *error) {
-        NSArray *raw = nil;
-        NSString *why = nil;
-        if (error) why = error.localizedDescription;
-        else if (resp.status != 200) why = [NSString stringWithFormat:@"HTTP %ld", (long)resp.status];
-        else if (!resp.data.length) why = @"empty answer";
-        else {
-            id json = [NSJSONSerialization JSONObjectWithData:resp.data options:0 error:NULL];
-            raw = RTArr(RTDict(json)[@"aweme_list"]);
-            if (!json) why = @"not JSON";
-            else if (!raw.count) why = [NSString stringWithFormat:@"no videos (status_code %lld)", RTNum(RTDict(json)[@"status_code"])];
-        }
-        if (log) log([NSString stringWithFormat:@"feed attempt %d: HTTP %ld, %lld bytes in %.1fs%@%@", n, (long)resp.status,
-                      resp.bytes, resp.duration, resp.tlsInfo.length ? [@", " stringByAppendingString:resp.tlsInfo] : @"",
-                      why ? [@" - " stringByAppendingString:why] : @""]);
-        if (why) {
-            if (n >= kRTAwemeAttempts) {
-                handler(nil, RTMakeError(-1, [NSString stringWithFormat:@"TikTok sent no feed after %d tries (%@).", n, why]));
-                return;
+        // Parsing ~400 KB of JSON and normalizing it takes long enough on an A5 to stutter a swipe: do it off the main thread.
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSArray *raw = nil;
+            NSString *why = nil;
+            if (error) why = error.localizedDescription;
+            else if (resp.status != 200) why = [NSString stringWithFormat:@"HTTP %ld", (long)resp.status];
+            else if (!resp.data.length) why = @"empty answer";
+            else {
+                id json = [NSJSONSerialization JSONObjectWithData:resp.data options:0 error:NULL];
+                raw = RTArr(RTDict(json)[@"aweme_list"]);
+                if (!json) why = @"not JSON";
+                else if (!raw.count) why = [NSString stringWithFormat:@"no videos (status_code %lld)", RTNum(RTDict(json)[@"status_code"])];
             }
-            double delay = resp.status == 429 ? 4.0 : 1.5;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self attempt:n + 1 refresh:refresh log:log handler:handler];
+            NSMutableArray *items = [NSMutableArray array];
+            if (!why) {
+                for (id aweme in raw) {
+                    NSDictionary *item = [RTAwemeAPI normalizeAweme:RTDict(aweme)];
+                    if (item) [items addObject:item];
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (log) log([NSString stringWithFormat:@"feed attempt %d: HTTP %ld, %lld bytes in %.1fs%@%@", n, (long)resp.status,
+                              resp.bytes, resp.duration, resp.tlsInfo.length ? [@", " stringByAppendingString:resp.tlsInfo] : @"",
+                              why ? [@" - " stringByAppendingString:why] : @""]);
+                if (why) {
+                    if (n >= kRTAwemeAttempts) {
+                        handler(nil, RTMakeError(-1, [NSString stringWithFormat:@"TikTok sent no feed after %d tries (%@).", n, why]));
+                        return;
+                    }
+                    double delay = resp.status == 429 ? 4.0 : 1.5;
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        [self attempt:n + 1 refresh:refresh log:log handler:handler];
+                    });
+                    return;
+                }
+                if (log) log([NSString stringWithFormat:@"parsed %lu of %lu entries as playable videos", (unsigned long)items.count, (unsigned long)raw.count]);
+                self.loadedOnce = YES;
+                handler(items, nil);
             });
-            return;
-        }
-        NSMutableArray *items = [NSMutableArray array];
-        for (id aweme in raw) {
-            NSDictionary *item = [RTAwemeAPI normalizeAweme:RTDict(aweme)];
-            if (item) [items addObject:item];
-        }
-        if (log) log([NSString stringWithFormat:@"parsed %lu of %lu entries as playable videos", (unsigned long)items.count, (unsigned long)raw.count]);
-        self.loadedOnce = YES;
-        handler(items, nil);
+        });
     }];
 }
 

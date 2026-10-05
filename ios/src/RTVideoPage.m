@@ -127,6 +127,9 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
         _avatarView.layer.masksToBounds = YES;
         _avatarView.layer.borderColor = [UIColor whiteColor].CGColor;
         _avatarView.layer.borderWidth = 2;
+        // a masked, rounded layer is re-rendered offscreen every frame while scrolling; cache it as a bitmap instead
+        _avatarView.layer.shouldRasterize = YES;
+        _avatarView.layer.rasterizationScale = [UIScreen mainScreen].scale;
         _avatarView.userInteractionEnabled = NO;
         [_avatarButton addSubview:_avatarView];
 
@@ -237,8 +240,8 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     [[RTVideoCache shared] fetchItem:self.item handler:^(NSString *path, RTHTTPResponse *response, NSError *error) {
         RTVideoPage *page = weakSelf;
         if (!page || page.generation != generation) return;
-        page.preparing = NO;
         if (error || !path.length) {
+            page.preparing = NO;
             [page.spinner stopAnimating];
             [page showMessage:[NSString stringWithFormat:@"%@\n\nTap to try again.", error.localizedDescription ?: @"This video could not be downloaded."]];
             return;
@@ -247,9 +250,31 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     }];
 }
 
+// Loading the asset's tracks synchronously (what AVPlayerItem / tracksWithMediaType: do) blocks the main thread for
+// a noticeable moment on an A5, which shows up as a hitch mid-swipe. Load them in the background first.
 - (void)startPlayerWithURL:(NSURL *)url
 {
-    self.playerItem = [AVPlayerItem playerItemWithURL:url];
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
+    NSUInteger generation = self.generation;
+    __weak RTVideoPage *weakSelf = self;
+    [asset loadValuesAsynchronouslyForKeys:@[ @"tracks", @"playable" ] completionHandler:^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            RTVideoPage *page = weakSelf;
+            if (!page || page.generation != generation || page.player) return;
+            page.preparing = NO;
+            if ([asset statusOfValueForKey:@"tracks" error:NULL] != AVKeyValueStatusLoaded || !asset.playable) {
+                [page.spinner stopAnimating];
+                [page showMessage:@"This video will not play.\n\nTap to try again."];
+                return;
+            }
+            [page attachPlayerForAsset:asset];
+        });
+    }];
+}
+
+- (void)attachPlayerForAsset:(AVAsset *)asset
+{
+    self.playerItem = [AVPlayerItem playerItemWithAsset:asset];
     [self.playerItem addObserver:self forKeyPath:@"status" options:0 context:RTItemStatusContext];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(itemDidReachEnd:)
                                                  name:AVPlayerItemDidPlayToEndTimeNotification object:self.playerItem];
