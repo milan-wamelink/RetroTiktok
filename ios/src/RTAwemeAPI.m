@@ -77,6 +77,7 @@ static const int kRTWebAttempts = 3;
             NSMutableArray *items = [NSMutableArray array];
             if (!why) {
                 for (id aweme in raw) {
+                    if ([RTAwemeAPI isAd:RTDict(aweme)]) continue;
                     NSDictionary *item = [RTAwemeAPI normalizeAweme:RTDict(aweme)];
                     if (item) [items addObject:item];
                 }
@@ -138,6 +139,14 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     }
     [best addObjectsFromArray:rest];
     return best;
+}
+
+// For You ads: paid placements carry ad_aweme_source (22% of an NL feed sample), paid creator posts branded_content_type.
++ (BOOL)isAd:(NSDictionary *)a
+{
+    NSDictionary *commerce = RTDict(a[@"commerce_info"]);
+    return RTNum(a[@"ad_aweme_source"]) > 0 || [a[@"is_ads"] boolValue] || RTDict(a[@"raw_ad_data"]).count
+        || RTNum(commerce[@"branded_content_type"]) > 0;
 }
 
 + (NSDictionary *)normalizeAweme:(NSDictionary *)a
