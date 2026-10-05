@@ -3,6 +3,7 @@
 #import "RTFeedViewController.h"
 #import "RTSettingsViewController.h"
 #import "RTTheme.h"
+#import "RTVideoCache.h"
 
 @interface RTTabBarController : UITabBarController
 @end
@@ -20,6 +21,7 @@
     [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:NULL];
     [[AVAudioSession sharedInstance] setActive:YES error:NULL];
 
+    [[RTVideoCache shared] prune];
     [RTTheme applyGlobalAppearance];
     [application setStatusBarStyle:UIStatusBarStyleBlackOpaque animated:NO];
 

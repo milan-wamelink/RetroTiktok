@@ -8,7 +8,7 @@
 
 enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 
-@interface RTSettingsViewController () <UIAlertViewDelegate>
+@interface RTSettingsViewController () <UIAlertViewDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UISwitch *soundSwitch;
 @end
 
@@ -67,7 +67,7 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
-        case RTSectionSource: return 3;
+        case RTSectionSource: return 4;
         case RTSectionPlayback: return 1;
         default: return 2;
     }
@@ -104,9 +104,13 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
             cell.textLabel.text = @"Pipeline Test";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-        } else {
+        } else if (indexPath.row == 2) {
             cell.textLabel.text = @"Video Cache";
             cell.detailTextLabel.text = [self cacheSummary];
+            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        } else {
+            cell.textLabel.text = @"Cache Limit";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld MB", (long)[RTSettings cacheLimitMB]];
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         }
     } else if (indexPath.section == RTSectionPlayback) {
@@ -135,7 +139,24 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
                                                         message:@"Downloaded videos are deleted. They download again when you watch them."
                                                        delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Clear", nil];
         [alert show];
+    } else if (indexPath.row == 3) {
+        UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:@"Keep downloaded videos up to" delegate:self
+                                                  cancelButtonTitle:@"Cancel" destructiveButtonTitle:nil
+                                                  otherButtonTitles:@"10 MB", @"25 MB", @"50 MB", @"100 MB", nil];
+        sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
+        [sheet showFromTabBar:self.tabBarController.tabBar];
     }
+}
+
+- (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex
+{
+    if (buttonIndex == actionSheet.cancelButtonIndex) return;
+    [RTSettings setCacheLimitMB:[[actionSheet buttonTitleAtIndex:buttonIndex] integerValue]];
+    [[RTVideoCache shared] prune];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self.tableView reloadData];
+    });
+    [self.tableView reloadData];
 }
 
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex

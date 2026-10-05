@@ -44,4 +44,15 @@
     [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
 }
 
++ (NSInteger)cacheLimitMB
+{
+    NSInteger mb = [[NSUserDefaults standardUserDefaults] integerForKey:@"cacheLimitMB"];
+    return mb > 0 ? mb : 25;
+}
+
++ (void)setCacheLimitMB:(NSInteger)mb
+{
+    [[NSUserDefaults standardUserDefaults] setInteger:mb forKey:@"cacheLimitMB"];
+}
+
 @end

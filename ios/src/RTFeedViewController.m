@@ -267,6 +267,10 @@
             [page unload];
         }
     }
+    NSMutableSet *keep = [NSMutableSet set];
+    for (NSInteger i = self.current; i <= self.current + 2 && i < (NSInteger)self.items.count; i++)
+        [keep addObject:RTStr(self.items[(NSUInteger)i][@"id"])];
+    [RTVideoCache shared].protectedIDs = keep;
     // The next page downloads its own video (preload above); fetch the one after that into the cache too.
     NSInteger ahead = self.current + 2;
     if (ahead < (NSInteger)self.items.count)

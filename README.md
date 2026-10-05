@@ -50,7 +50,7 @@ Or open the .deb in iFile and tap Install. The package:
 - depends only on `firmware (>= 6.0)`;
 - runs `uicache` after install/remove, so the icon appears and disappears without a respring;
 - on removal (`dpkg -r nl.retrotok.legacytiktok` or Cydia), also deletes what the app created:
-  `/var/mobile/Library/Caches/nl.retrotok.legacytiktok` (downloaded videos, at most 24 kept) and
+  `/var/mobile/Library/Caches/nl.retrotok.legacytiktok` (downloaded videos, capped at 25 MB by default, adjustable in Settings) and
   `/var/mobile/Library/Preferences/nl.retrotok.legacytiktok.plist`.
 
 An `.ipa` of the same app is also built, for testing.

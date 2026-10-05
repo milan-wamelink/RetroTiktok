@@ -7,4 +7,6 @@
 + (void)setAccessKey:(NSString *)key;
 + (BOOL)soundOn;
 + (void)setSoundOn:(BOOL)on;
++ (NSInteger)cacheLimitMB;            // video cache size cap, default 25
++ (void)setCacheLimitMB:(NSInteger)mb;
 @end

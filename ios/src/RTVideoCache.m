@@ -1,6 +1,6 @@
 #import "RTVideoCache.h"
+#import "RTSettings.h"
 
-static const NSUInteger kRTVideoCacheKeep = 24;
 static NSString * const kRTCDNUserAgent = @"AppleCoreMedia/1.0.0.10B329 (iPhone; U; CPU OS 6_1_3 like Mac OS X; en_us)";
 
 typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
@@ -93,22 +93,35 @@ typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
 
 - (void)prune
 {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{ [self pruneNow]; });
+    NSSet *keep = self.protectedIDs ?: [NSSet set];
+    unsigned long long limit = (unsigned long long)[RTSettings cacheLimitMB] * 1024 * 1024;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{ [self pruneKeeping:keep limit:limit]; });
 }
 
-- (void)pruneNow
+- (void)pruneKeeping:(NSSet *)keep limit:(unsigned long long)limit
 {
     NSString *dir = [RTVideoCache cacheDirectory];
     NSFileManager *fm = [NSFileManager defaultManager];
     NSMutableArray *files = [NSMutableArray array];
     for (NSString *name in [fm contentsOfDirectoryAtPath:dir error:NULL]) {
         NSString *p = [dir stringByAppendingPathComponent:name];
-        NSDate *m = [fm attributesOfItemAtPath:p error:NULL][NSFileModificationDate];
-        if ([name hasSuffix:@".mp4"] && m) [files addObject:@[ m, p ]];
+        NSDictionary *attrs = [fm attributesOfItemAtPath:p error:NULL];
+        NSDate *m = attrs[NSFileModificationDate];
+        if (!m) continue;
+        if ([name hasSuffix:@".part"]) {
+            // leftovers of downloads cut off by the app being killed
+            if (-[m timeIntervalSinceNow] > 600) [fm removeItemAtPath:p error:NULL];
+            continue;
+        }
+        if ([name hasSuffix:@".mp4"]) [files addObject:@[ m, p, @([attrs fileSize]), [name stringByDeletingPathExtension] ]];
     }
-    if (files.count <= kRTVideoCacheKeep) return;
     [files sortUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) { return [b[0] compare:a[0]]; }];
-    for (NSUInteger i = kRTVideoCacheKeep; i < files.count; i++) [fm removeItemAtPath:files[i][1] error:NULL];
+    unsigned long long total = 0;
+    for (NSArray *f in files) {
+        unsigned long long size = [f[2] unsignedLongLongValue];
+        if ([keep containsObject:f[3]] || total + size <= limit) total += size;
+        else [fm removeItemAtPath:f[1] error:NULL];
+    }
 }
 
 @end
