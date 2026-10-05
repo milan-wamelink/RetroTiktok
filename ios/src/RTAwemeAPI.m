@@ -422,7 +422,7 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
         NSMutableArray *items = [NSMutableArray array];
         for (id raw in list) {
             NSDictionary *item = [RTAwemeAPI normalizeWebItem:RTDict(raw)];
-            if (item) [items addObject:item];
+            if (item) [items addObject:[RTAwemeAPI preferPlayURL:item]];
         }
         NSString *next = (list.count && RTBool(json[@"hasMore"])) ? RTStr(json[@"cursor"]) : nil;
         if ([next isEqualToString:(cursor.length ? cursor : @"0")]) next = nil;
@@ -434,6 +434,19 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
         NSDictionary *r = RTDict(result);
         handler(nil, RTArr(r[@"items"]) ?: @[], r[@"next"], error);
     }];
+}
+
+// Hashtag results' v16/v19-webapp-prime links answer 403 (profile ones don't); their www.tiktok.com/aweme/v1/play/
+// link redirects to a v16m CDN that serves the same H.264 file, so try it first.
++ (NSDictionary *)preferPlayURL:(NSDictionary *)item
+{
+    NSMutableArray *play = [NSMutableArray array], *rest = [NSMutableArray array];
+    for (id u in RTArr(item[@"video_urls"]))
+        [([RTStr(u) rangeOfString:@"/aweme/v1/play/"].location != NSNotFound ? play : rest) addObject:u];
+    if (!play.count) return item;
+    NSMutableDictionary *m = [item mutableCopy];
+    m[@"video_urls"] = [play arrayByAddingObjectsFromArray:rest];
+    return m;
 }
 
 // No JSON endpoint answers unsigned for a username, but the creator's page embeds its profile (with secUid) as JSON.
