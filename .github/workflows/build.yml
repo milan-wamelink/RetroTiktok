@@ -104,7 +104,14 @@ jobs:
         run: |
           set -o pipefail
           export PATH="$THEOS/toolchain/linux/iphone/bin:$THEOS/bin:$PATH"
-          make package FINALPACKAGE=1 -j"$(nproc)" -k 2>&1 | grep -v "ld: warning: building for iOS, but linking in .tbd" | tee build.log
+          build() { make package FINALPACKAGE=1 "$@" 2>&1 | grep -v "ld: warning: building for iOS, but linking in .tbd" | tee build.log; }
+          # Parallel compiles occasionally race on clang's module cache ("signature mismatch"); retry once serially.
+          rm -rf ~/.cache/clang/ModuleCache
+          if ! build -j"$(nproc)" -k; then
+            echo "::warning::build failed, retrying with a fresh module cache (-j1)"
+            rm -rf ~/.cache/clang/ModuleCache
+            build -j1
+          fi
 
       - name: Make IPA
         run: |
