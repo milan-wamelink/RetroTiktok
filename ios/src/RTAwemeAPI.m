@@ -435,16 +435,16 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     }];
 }
 
-// Hashtag results' v16/v19-webapp-prime links answer 403 (profile ones don't); their www.tiktok.com/aweme/v1/play/
-// link redirects to a v16m CDN that serves the same H.264 file, so try it first.
+// Hashtag results' v16/v19-webapp-prime links answer 403, and their www.tiktok.com/aweme/v1/play/ link gives an MP4 in
+// some regions but a web page in others. RTVideoCache first fetches fresh links from the creator's list (needs_fresh_links).
 + (NSDictionary *)preferPlayURL:(NSDictionary *)item
 {
     NSMutableArray *play = [NSMutableArray array], *rest = [NSMutableArray array];
     for (id u in RTArr(item[@"video_urls"]))
         [([RTStr(u) rangeOfString:@"/aweme/v1/play/"].location != NSNotFound ? play : rest) addObject:u];
-    if (!play.count) return item;
     NSMutableDictionary *m = [item mutableCopy];
     m[@"video_urls"] = [play arrayByAddingObjectsFromArray:rest];
+    m[@"needs_fresh_links"] = @YES;
     return m;
 }
 

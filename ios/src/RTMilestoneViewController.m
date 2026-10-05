@@ -310,15 +310,20 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
                 UIImage *img = resp.data ? [UIImage imageWithData:resp.data] : nil;
                 [self say:[NSString stringWithFormat:@"thumbnail %@: HTTP %ld, %@, %lld bytes, %@", thumb.host, (long)resp.status,
                            resp.contentType, resp.bytes, img ? @"decodes" : (error.localizedDescription ?: @"NOT an image iOS can show")]];
-                [self tryMirror:urls index:0];
+                [[RTAwemeAPI shared] refreshItem:item handler:^(NSDictionary *fresh, NSError *error) {
+                    [self say:fresh ? @"creator-list links: found" : [@"creator-list links: " stringByAppendingString:error.localizedDescription]];
+                    NSArray *all = [RTArr(fresh[@"video_urls"]) ?: @[] arrayByAddingObjectsFromArray:urls];
+                    [self tryMirror:all index:0 item:item];
+                }];
             }];
         }];
     }];
 }
 
-- (void)tryMirror:(NSArray *)urls index:(NSUInteger)i
+// Logs every mirror (creator-list links first), then downloads the way the player does and checks the file.
+- (void)tryMirror:(NSArray *)urls index:(NSUInteger)i item:(NSDictionary *)item
 {
-    if (i >= urls.count) { [self fail:@"every mirror failed"]; return; }
+    if (i >= urls.count) { [self playerPath:item]; return; }
     NSURL *url = [NSURL URLWithString:RTStr(urls[i])];
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"hashtag-test.mp4"];
     NSDictionary *headers = @{ @"User-Agent": @"AppleCoreMedia/1.0.0.10B329 (iPhone; U; CPU OS 6_1_3 like Mac OS X; en_us)",
@@ -328,19 +333,30 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
                    url.host, [url.path substringToIndex:MIN(url.path.length, (NSUInteger)16)], (long)resp.status, resp.bytes,
                    (long)resp.redirects, [NSURL URLWithString:resp.finalURL].host ?: @"-", resp.contentType ?: @"-",
                    error ? [@", " stringByAppendingString:error.localizedDescription] : @""]];
-        if (error || !resp.filePath) { [self tryMirror:urls index:i + 1]; return; }
-        NSData *head = [[NSFileHandle fileHandleForReadingAtPath:resp.filePath] readDataOfLength:12];
-        [self say:[NSString stringWithFormat:@"file starts %@", head]];
-        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:resp.filePath] options:nil];
+        if (resp.filePath) [[NSFileManager defaultManager] removeItemAtPath:resp.filePath error:NULL];
+        [self tryMirror:urls index:i + 1 item:item];
+    }];
+}
+
+- (void)playerPath:(NSDictionary *)item
+{
+    [self say:@"player download (RTVideoCache):"];
+    NSString *cached = [[RTVideoCache shared] cachedPathForID:RTStr(item[@"id"])];
+    if (cached) [[NSFileManager defaultManager] removeItemAtPath:cached error:NULL];
+    [[RTVideoCache shared] fetchItem:item handler:^(NSString *path, RTHTTPResponse *resp, NSError *error) {
+        if (error) { [self fail:[@"player download: " stringByAppendingString:error.localizedDescription]]; return; }
+        NSData *head = [[NSFileHandle fileHandleForReadingAtPath:path] readDataOfLength:12];
+        [self say:[NSString stringWithFormat:@"%.2f MB from %@, file starts %@", resp.bytes / 1048576.0,
+                   [NSURL URLWithString:resp.finalURL].host, head]];
+        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:path] options:nil];
         [asset loadValuesAsynchronouslyForKeys:@[ @"tracks", @"playable" ] completionHandler:^{
             RTMain(^{
                 NSError *e = nil;
-                AVKeyValueStatus st = [asset statusOfValueForKey:@"tracks" error:&e];
-                [self say:[NSString stringWithFormat:@"AVAsset: tracks %@, %lu video tracks, playable %@%@",
-                           st == AVKeyValueStatusLoaded ? @"loaded" : @"FAILED",
-                           (unsigned long)[asset tracksWithMediaType:AVMediaTypeVideo].count, asset.playable ? @"YES" : @"NO",
+                BOOL ok = [asset statusOfValueForKey:@"tracks" error:&e] == AVKeyValueStatusLoaded && asset.playable;
+                [self say:[NSString stringWithFormat:@"AVAsset: %lu video tracks, playable %@%@",
+                           (unsigned long)[asset tracksWithMediaType:AVMediaTypeVideo].count, ok ? @"YES" : @"NO",
                            e ? [@", " stringByAppendingString:e.localizedDescription] : @""]];
-                [[NSFileManager defaultManager] removeItemAtPath:resp.filePath error:NULL];
+                if (!ok) { [self fail:@"hashtag video is not playable"]; return; }
                 [self say:@"\nall steps passed"];
                 self.running = NO;
             });
