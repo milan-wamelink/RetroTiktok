@@ -24,6 +24,7 @@
 @property (nonatomic, strong) id<RTFeedSource> source;
 @property (nonatomic, assign) NSInteger startIndex;
 @property (nonatomic, assign) BOOL subFeed;
+@property (nonatomic, assign) BOOL releasedPlayers;
 @end
 
 @implementation RTFeedViewController
@@ -135,8 +136,24 @@
 {
     [super viewDidAppear:animated];
     self.visible = YES;
+    if (self.releasedPlayers) {
+        self.releasedPlayers = NO;
+        [self pageSettled];
+        return;
+    }
     [self protectUpcoming];
     [self resumePlayback];
+}
+
+// A profile (and its player) was pushed over this feed. The A5 only renders a few AVPlayer videos at once, so a
+// pushed player that has to share with our paused ones can stay black. Release ours; the files stay cached.
+- (void)viewDidDisappear:(BOOL)animated
+{
+    [super viewDidDisappear:animated];
+    if (self.navigationController && self.navigationController.topViewController != self) {
+        for (RTVideoPage *page in self.pages) [page unload];
+        self.releasedPlayers = YES;
+    }
 }
 
 - (void)viewWillDisappear:(BOOL)animated
@@ -280,6 +297,10 @@
 {
     if (!self.items.count) return;
     [self layoutPages:NO];
+    // Not on screen yet (e.g. a pushed profile player still animating in): start the current video's download
+    // before the next ones, instead of waiting for viewDidAppear.
+    RTVideoPage *currentPage = [self pageForIndex:self.current];
+    if (!self.visible && currentPage.index == self.current) [currentPage preload];
     for (RTVideoPage *page in self.pages) {
         if (page.index == self.current) {
             if (self.visible) [page activate];
