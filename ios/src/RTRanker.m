@@ -61,7 +61,7 @@ static NSSet *RTTags(NSDictionary *item)
 
     // Settings: starting guidance that behaviour can outweigh (Block never gets here).
     RTLevel level = [RTSettings levelForLanguage:RTStr(item[@"lang"]) ?: @"un"];
-    if (level == RTLevelPrefer) [terms addObject:@[ @0.6, [NSString stringWithFormat:@"prefer %@", item[@"lang"]] ]];
+    if (level == RTLevelPrefer) [terms addObject:@[ @1.2, [NSString stringWithFormat:@"prefer %@", item[@"lang"]] ]];
     if (level == RTLevelReduce) [terms addObject:@[ @-0.8, [NSString stringWithFormat:@"reduce %@", item[@"lang"]] ]];
 
     double plays = RTNum(item[@"plays"]), likes = RTNum(item[@"likes"]);

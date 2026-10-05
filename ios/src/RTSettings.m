@@ -108,4 +108,25 @@ static const NSInteger kRTCacheLimitMaxMB = 100;
     [[NSUserDefaults standardUserDefaults] setObject:levels forKey:@"languageLevels"];
     [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
 }
++ (NSString *)feedRegion
+{
+    NSString *r = RTStr([[NSUserDefaults standardUserDefaults] objectForKey:@"feedRegion"]);
+    if (r.length == 2) return r;
+    r = [[[NSLocale currentLocale] objectForKey:NSLocaleCountryCode] uppercaseString];
+    return r.length == 2 ? r : @"US";
+}
+
++ (void)setFeedRegion:(NSString *)country
+{
+    [[NSUserDefaults standardUserDefaults] setObject:country forKey:@"feedRegion"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
+}
+
++ (NSString *)feedLanguage
+{
+    NSDictionary *languages = @{ @"NL": @"nl", @"BE": @"nl", @"DE": @"de", @"AT": @"de", @"FR": @"fr", @"ES": @"es",
+                                 @"IT": @"it", @"PT": @"pt", @"BR": @"pt", @"PL": @"pl", @"TR": @"tr", @"MX": @"es" };
+    return languages[[self feedRegion]] ?: @"en";
+}
+
 @end

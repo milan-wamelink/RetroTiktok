@@ -9,7 +9,12 @@
 #import "RTLanguagesViewController.h"
 
 enum { RTSectionSource, RTSectionForYou, RTSectionPlayback, RTSectionAbout, RTSectionCount };
-enum { RTSheetCacheLimit = 1, RTSheetDiscovery, RTAlertClearCache, RTAlertResetLearning };
+enum { RTSheetCacheLimit = 1, RTSheetDiscovery, RTSheetRegion, RTAlertClearCache, RTAlertResetLearning };
+
+static NSArray *RTFeedRegions(void)
+{
+    return @[ @[@"NL", @"Netherlands"], @[@"BE", @"Belgium"], @[@"DE", @"Germany"], @[@"GB", @"United Kingdom"], @[@"US", @"United States"] ];
+}
 
 @interface RTSettingsViewController () <UIAlertViewDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UISwitch *soundSwitch;
@@ -96,7 +101,7 @@ enum { RTSheetCacheLimit = 1, RTSheetDiscovery, RTAlertClearCache, RTAlertResetL
 {
     switch (section) {
         case RTSectionSource: return 4;
-        case RTSectionForYou: return 4;
+        case RTSectionForYou: return 5;
         case RTSectionPlayback: return 2;
         default: return 2;
     }
@@ -163,6 +168,10 @@ enum { RTSheetCacheLimit = 1, RTSheetDiscovery, RTAlertClearCache, RTAlertResetL
             cell.textLabel.text = @"Languages";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"Feed Region";
+            cell.detailTextLabel.text = [RTSettings feedRegion];
+            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         } else {
             cell.textLabel.text = @"Reset Learning";
             cell.textLabel.textColor = [UIColor colorWithRed:0.8 green:0.1 blue:0.1 alpha:1];
@@ -195,6 +204,15 @@ enum { RTSheetCacheLimit = 1, RTSheetDiscovery, RTAlertClearCache, RTAlertResetL
         } else if (indexPath.row == 2) {
             [self.navigationController pushViewController:[[RTLanguagesViewController alloc] init] animated:YES];
         } else if (indexPath.row == 3) {
+            UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:@"Which country's For You should TikTok send?"
+                                                               delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
+                                                      otherButtonTitles:nil];
+            for (NSArray *region in RTFeedRegions()) [sheet addButtonWithTitle:region[1]];
+            sheet.cancelButtonIndex = [sheet addButtonWithTitle:@"Cancel"];
+            sheet.tag = RTSheetRegion;
+            sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
+            [sheet showFromTabBar:self.tabBarController.tabBar];
+        } else if (indexPath.row == 4) {
             UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Reset Learning?"
                                                             message:@"For You forgets what it learned from your viewing and which videos you have seen. Your settings and favorites stay."
                                                            delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Reset", nil];
@@ -227,6 +245,12 @@ enum { RTSheetCacheLimit = 1, RTSheetDiscovery, RTAlertClearCache, RTAlertResetL
 - (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex
 {
     if (buttonIndex == actionSheet.cancelButtonIndex) return;
+    if (actionSheet.tag == RTSheetRegion) {
+        NSArray *regions = RTFeedRegions();
+        if (buttonIndex < (NSInteger)regions.count) [RTSettings setFeedRegion:regions[(NSUInteger)buttonIndex][0]];
+        [self.tableView reloadData];
+        return;
+    }
     if (actionSheet.tag == RTSheetDiscovery) {
         NSString *title = [actionSheet buttonTitleAtIndex:buttonIndex];
         [RTSettings setDiscovery:[title isEqualToString:@"Familiar"] ? 0 : [title isEqualToString:@"Experimental"] ? 1 : 0.5];

@@ -19,5 +19,9 @@ typedef NS_ENUM(NSInteger, RTLevel) { RTLevelBlock = -2, RTLevelReduce = -1, RTL
 + (double)discovery;                  // 0 Familiar, 0.5 Balanced (default), 1 Experimental
 + (void)setDiscovery:(double)value;
 + (RTLevel)levelForLanguage:(NSString *)code;
+// Country TikTok's For You feed is requested for (region=, and its language as language=); defaults to the iPhone's region.
++ (NSString *)feedRegion;
++ (void)setFeedRegion:(NSString *)country;
++ (NSString *)feedLanguage;
 + (void)setLevel:(RTLevel)level forLanguage:(NSString *)code;
 @end

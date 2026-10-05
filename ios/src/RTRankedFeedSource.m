@@ -5,9 +5,10 @@
 #import "RTSettings.h"
 
 static const NSUInteger kRTBatch = 4;         // handed to the player per request: small, so learning shows up quickly
-static const NSUInteger kRTRefillBelow = 16;  // keep this many candidates ahead to choose from
-static const NSUInteger kRTMaxPool = 48;
-static const NSUInteger kRTMaxFills = 3;      // feed requests per batch when blocks/seen filter everything out
+static const NSUInteger kRTRefillBelow = 24;  // keep filling in the background until this many candidates wait
+static const NSUInteger kRTMaxPool = 60;
+static const NSUInteger kRTMaxFills = 3;      // feed requests to wait for when nothing showable is left
+static const NSUInteger kRTReduceWindow = 10; // a Reduced language gets at most 1 of every 10 videos, if others exist
 static const NSTimeInterval kRTPoolMaxAge = 20 * 60;   // TikTok's CDN links expire; drop old candidates
 
 @interface RTRankedFeedSource ()
@@ -85,7 +86,26 @@ static const NSTimeInterval kRTPoolMaxAge = 20 * 60;   // TikTok's CDN links exp
         NSArray *waiters = [self.fillWaiters copy];
         [self.fillWaiters removeAllObjects];
         for (void (^w)(NSError *) in waiters) w(error);
+        [self topUpAfter:error ? 5.0 : 0.5];
     }];
+}
+
+// TikTok sends ~8-12 videos per successful request and often a few empty answers first, so keep a reserve ahead.
+- (void)topUpAfter:(NSTimeInterval)delay
+{
+    if (self.filling || [self reserve] >= kRTRefillBelow) return;
+    NSUInteger generation = self.generation;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (generation == self.generation && [self reserve] < kRTRefillBelow) [self fill:nil];
+    });
+}
+
+// Candidates that can be shown freely; held-back Reduced-language videos don't count.
+- (NSUInteger)reserve
+{
+    NSUInteger n = 0;
+    for (NSDictionary *item in [self candidates]) if (![self isReduced:item]) n++;
+    return n;
 }
 
 #pragma mark RTFeedSource
@@ -106,16 +126,18 @@ static const NSTimeInterval kRTPoolMaxAge = 20 * 60;   // TikTok's CDN links exp
 {
     if (generation != self.generation) return;
     NSArray *candidates = [self candidates];
-    // RTAwemeAPI already retries TikTok's empty answers, so stop filling after its first error.
-    if (candidates.count < kRTBatch && fills < kRTMaxFills && !lastError) {
+    // Serve whatever is showable now; only wait for TikTok when nothing is. RTAwemeAPI already retries empty answers,
+    // so stop waiting after its first error. After the last fill, a Reduced language may fill the gap.
+    BOOL lastTry = fills >= kRTMaxFills || lastError;
+    NSArray *batch = [self pickFrom:candidates relaxed:lastTry];
+    if (!batch.count && !lastTry) {
         [self fill:^(NSError *error) { [self serve:handler fills:fills + 1 lastError:error generation:generation]; }];
         return;
     }
-    if (!candidates.count) {
+    if (!batch.count) {
         handler(nil, lastError ?: RTMakeError(-1, @"TikTok only sent videos you have seen or blocked. Try again."));
         return;
     }
-    NSArray *batch = [self pickFrom:candidates];
     NSMutableSet *picked = [NSMutableSet set];
     for (NSDictionary *item in batch) [picked addObject:RTStr(item[@"id"])];
     [self.pool filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *e, NSDictionary *bindings) {
@@ -124,24 +146,52 @@ static const NSTimeInterval kRTPoolMaxAge = 20 * 60;   // TikTok's CDN links exp
     [self.recent addObjectsFromArray:batch];
     if (self.recent.count > 20) [self.recent removeObjectsInRange:NSMakeRange(0, self.recent.count - 20)];
     handler(batch, nil);
-    if (candidates.count - batch.count < kRTRefillBelow) [self fill:nil];
+    [self topUpAfter:0];
+}
+
+- (BOOL)isReduced:(NSDictionary *)item
+{
+    return [RTSettings levelForLanguage:RTStr(item[@"lang"]) ?: @"un"] == RTLevelReduce;
+}
+
+// Whether a Reduced-language video may come next: none among the last kRTReduceWindow - 1 shown.
+- (BOOL)reducedAllowedAfter:(NSArray *)recent
+{
+    NSUInteger n = MIN(recent.count, kRTReduceWindow - 1);
+    for (NSUInteger i = recent.count - n; i < recent.count; i++)
+        if ([self isReduced:recent[i]]) return NO;
+    return YES;
 }
 
 // Greedy: score everything, take the best (or, for exploration slots, a random one from the lower half), then rescore
 // with that pick counted as recent so the next pick avoids the same creator/tags.
-- (NSArray *)pickFrom:(NSArray *)candidates
+// relaxed: when TikTok sends nothing else, a Reduced language may break its cap rather than leave the feed empty.
+- (NSArray *)pickFrom:(NSArray *)candidates relaxed:(BOOL)relaxed
 {
     NSMutableArray *left = [candidates mutableCopy];
     NSMutableArray *batch = [NSMutableArray array];
-    if (![RTSettings personalized]) {
-        [batch addObjectsFromArray:[left subarrayWithRange:NSMakeRange(0, MIN(kRTBatch, left.count))]];
-        return batch;
-    }
-    double exploreChance = 0.1 + 0.25 * [RTSettings discovery];
     NSMutableArray *recent = [self.recent mutableCopy];
+    BOOL personalized = [RTSettings personalized];
+    double exploreChance = 0.1 + 0.25 * [RTSettings discovery];
     while (batch.count < kRTBatch && left.count) {
+        NSArray *allowed = left;
+        if (![self reducedAllowedAfter:recent]) {
+            allowed = [left filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id item, NSDictionary *b) {
+                return ![self isReduced:item];
+            }]];
+            if (!allowed.count) {
+                if (!relaxed || batch.count) break;
+                allowed = left;
+            }
+        }
+        if (!personalized) {
+            [batch addObject:allowed[0]];
+            [recent addObject:allowed[0]];
+            [left removeObjectIdenticalTo:allowed[0]];
+            continue;
+        }
         NSMutableArray *scored = [NSMutableArray array];
-        for (NSDictionary *item in left) {
+        for (NSDictionary *item in allowed) {
             NSString *why = nil;
             double score = [RTRanker scoreItem:item recent:recent reasons:&why];
             [scored addObject:@[ @(score), item, why ?: @"" ]];

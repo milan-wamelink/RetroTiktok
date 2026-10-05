@@ -1,5 +1,6 @@
 #import "RTAwemeAPI.h"
 #import "RTFeatures.h"
+#import "RTSettings.h"
 #import "rt_xbogus.h"
 #include <time.h>
 #import "RTHTTPClient.h"
@@ -44,9 +45,10 @@ static const int kRTWebAttempts = 3;
     NSString *q = [NSString stringWithFormat:
         @"type=0&count=8&pull_type=%d&aid=1233&app_name=musical_ly&version_code=360004&version_name=36.0.4"
         @"&manifest_version_code=2023600040&device_platform=android&os=android&os_version=13&device_type=Pixel+7"
-        @"&device_brand=Google&language=en&region=US&app_language=en&channel=googleplay"
+        @"&device_brand=Google&language=%@&region=%@&app_language=%@&channel=googleplay"
         @"&iid=7318518857994389254&device_id=7318517321748022790&openudid=%@&ts=%lld&_rticket=%lld",
-        refresh ? 0 : 2, [self openUDID], now, now * 1000];
+        refresh ? 0 : 2, [RTSettings feedLanguage], [RTSettings feedRegion], [RTSettings feedLanguage],
+        [self openUDID], now, now * 1000];
     return [NSURL URLWithString:[NSString stringWithFormat:@"%@/aweme/v1/feed/?%@", kRTAwemeHost, q]];
 }
 
