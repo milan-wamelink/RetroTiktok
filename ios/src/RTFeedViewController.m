@@ -7,6 +7,7 @@
 #import "RTProfileViewController.h"
 #import "RTCommentsViewController.h"
 #import "RTFavorites.h"
+#import "RTRankedFeedSource.h"
 
 @interface RTFeedViewController () <UIScrollViewDelegate, RTVideoPageDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UIScrollView *scroll;
@@ -27,6 +28,8 @@
 @property (nonatomic, assign) BOOL subFeed;
 @property (nonatomic, assign) BOOL releasedPlayers;
 @property (nonatomic, strong) NSTimer *debugTimer;
+@property (nonatomic, strong) NSDictionary *viewItem;     // the video being watched, reported to a learning source
+@property (nonatomic, weak) RTVideoPage *viewPage;
 @end
 
 @implementation RTFeedViewController
@@ -38,7 +41,7 @@
         self.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"For You" image:[RTTheme tabIconHome] tag:0];
         _items = [NSMutableArray array];
         _itemIDs = [NSMutableSet set];
-        _source = [RTAwemeAPI shared];
+        _source = [RTRankedFeedSource shared];
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self selector:@selector(settingsChanged) name:RTSettingsDidChangeNotification object:nil];
         [nc addObserver:self selector:@selector(favoritesChanged) name:RTLikesDidChangeNotification object:nil];
@@ -229,6 +232,8 @@
 
 - (void)refresh
 {
+    [self pausePlayback];
+    [self finishView];
     for (RTVideoPage *page in self.pages) {
         [page unload];
         page.index = -1;
@@ -343,12 +348,42 @@
             [page unload];
         }
     }
+    [self trackView];
     [self protectUpcoming];
     // The next page downloads its own video (preload above); fetch the one after that into the cache too.
     NSInteger ahead = self.current + 2;
     if (ahead < (NSInteger)self.items.count)
         [[RTVideoCache shared] fetchItem:self.items[(NSUInteger)ahead] handler:^(NSString *path, RTHTTPResponse *r, NSError *e) {}];
     if (self.current >= (NSInteger)self.items.count - 3) [self loadMore];
+}
+
+#pragma mark Learning (local For You ranking)
+
+- (id<RTFeedLearning>)learner
+{
+    return [self.source conformsToProtocol:@protocol(RTFeedLearning)] ? (id<RTFeedLearning>)self.source : nil;
+}
+
+// Called after the pages settled (the one left behind is deactivated, so its played time is final).
+- (void)trackView
+{
+    if (!self.learner || self.current >= (NSInteger)self.items.count) return;
+    NSDictionary *item = self.items[(NSUInteger)self.current];
+    if (self.viewItem && ![RTStr(self.viewItem[@"id"]) isEqualToString:RTStr(item[@"id"])]) [self finishView];
+    if (!self.viewItem) {
+        self.viewItem = item;
+        self.viewPage = [self pageForIndex:self.current];
+    }
+}
+
+- (void)finishView
+{
+    NSDictionary *item = self.viewItem;
+    RTVideoPage *page = self.viewPage;
+    self.viewItem = nil;
+    self.viewPage = nil;
+    if (!item || !page || ![RTStr(page.item[@"id"]) isEqualToString:RTStr(item[@"id"])]) return;
+    [self.learner feedDidView:item seconds:page.playedSeconds duration:page.mediaDuration showedVideo:page.showedVideo];
 }
 
 - (void)protectUpcoming
@@ -378,12 +413,13 @@
 
 - (void)videoPageWantsLike:(RTVideoPage *)page
 {
-    if (page.item) [[RTFavorites shared] toggleItem:page.item];
+    if (page.item && [[RTFavorites shared] toggleItem:page.item]) [self.learner feedDidEngage:page.item kind:@"favorite"];
 }
 
 - (void)videoPageWantsComments:(RTVideoPage *)page
 {
     if (!page.item) return;
+    [self.learner feedDidEngage:page.item kind:@"comments"];
     UINavigationController *nav = [[UINavigationController alloc]
         initWithRootViewController:[[RTCommentsViewController alloc] initWithItem:page.item]];
     nav.navigationBar.barStyle = UIBarStyleBlack;
@@ -393,6 +429,7 @@
 - (void)videoPageWantsProfile:(RTVideoPage *)page
 {
     if (!page.item) return;
+    [self.learner feedDidEngage:page.item kind:@"profile"];
     NSString *secUID = RTStr(page.item[@"sec_uid"]);
     // Opened from that same profile's grid: go back to it instead of stacking another copy.
     NSArray *stack = self.navigationController.viewControllers;

@@ -67,4 +67,66 @@ static const NSInteger kRTCacheLimitMaxMB = 100;
     [[NSUserDefaults standardUserDefaults] setBool:on forKey:@"playerDebug"];
     [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
 }
+
++ (BOOL)personalized
+{
+    id v = [[NSUserDefaults standardUserDefaults] objectForKey:@"personalized"];
+    return v ? [v boolValue] : YES;
+}
+
++ (void)setPersonalized:(BOOL)on
+{
+    [[NSUserDefaults standardUserDefaults] setBool:on forKey:@"personalized"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
+}
+
++ (double)discovery
+{
+    id v = [[NSUserDefaults standardUserDefaults] objectForKey:@"discovery"];
+    return v ? MAX(0.0, MIN(1.0, [v doubleValue])) : 0.5;
+}
+
++ (void)setDiscovery:(double)value
+{
+    [[NSUserDefaults standardUserDefaults] setDouble:value forKey:@"discovery"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
+}
+
++ (RTLevel)levelForLanguage:(NSString *)code
+{
+    NSDictionary *levels = RTDict([[NSUserDefaults standardUserDefaults] objectForKey:@"languageLevels"]);
+    return code.length ? (RTLevel)RTNum(levels[code]) : RTLevelNormal;
+}
+
++ (void)setLevel:(RTLevel)level forLanguage:(NSString *)code
+{
+    if (!code.length) return;
+    NSMutableDictionary *levels = [RTDict([[NSUserDefaults standardUserDefaults] objectForKey:@"languageLevels"]) mutableCopy]
+        ?: [NSMutableDictionary dictionary];
+    if (level == RTLevelNormal) [levels removeObjectForKey:code];
+    else levels[code] = @(level);
+    [[NSUserDefaults standardUserDefaults] setObject:levels forKey:@"languageLevels"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
+}
++ (NSString *)feedRegion
+{
+    NSString *r = RTStr([[NSUserDefaults standardUserDefaults] objectForKey:@"feedRegion"]);
+    if (r.length == 2) return r;
+    r = [[[NSLocale currentLocale] objectForKey:NSLocaleCountryCode] uppercaseString];
+    return r.length == 2 ? r : @"US";
+}
+
++ (void)setFeedRegion:(NSString *)country
+{
+    [[NSUserDefaults standardUserDefaults] setObject:country forKey:@"feedRegion"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
+}
+
++ (NSString *)feedLanguage
+{
+    NSDictionary *languages = @{ @"NL": @"nl", @"BE": @"nl", @"DE": @"de", @"AT": @"de", @"FR": @"fr", @"ES": @"es",
+                                 @"IT": @"it", @"PT": @"pt", @"BR": @"pt", @"PL": @"pl", @"TR": @"tr", @"MX": @"es" };
+    return languages[[self feedRegion]] ?: @"en";
+}
+
 @end

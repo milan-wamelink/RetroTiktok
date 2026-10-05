@@ -1,4 +1,6 @@
 #import "RTAwemeAPI.h"
+#import "RTFeatures.h"
+#import "RTSettings.h"
 #import "rt_xbogus.h"
 #include <time.h>
 #import "RTHTTPClient.h"
@@ -43,9 +45,10 @@ static const int kRTWebAttempts = 3;
     NSString *q = [NSString stringWithFormat:
         @"type=0&count=8&pull_type=%d&aid=1233&app_name=musical_ly&version_code=360004&version_name=36.0.4"
         @"&manifest_version_code=2023600040&device_platform=android&os=android&os_version=13&device_type=Pixel+7"
-        @"&device_brand=Google&language=en&region=US&app_language=en&channel=googleplay"
+        @"&device_brand=Google&language=%@&region=%@&app_language=%@&channel=googleplay"
         @"&iid=7318518857994389254&device_id=7318517321748022790&openudid=%@&ts=%lld&_rticket=%lld",
-        refresh ? 0 : 2, [self openUDID], now, now * 1000];
+        refresh ? 0 : 2, [RTSettings feedLanguage], [RTSettings feedRegion], [RTSettings feedLanguage],
+        [self openUDID], now, now * 1000];
     return [NSURL URLWithString:[NSString stringWithFormat:@"%@/aweme/v1/feed/?%@", kRTAwemeHost, q]];
 }
 
@@ -74,6 +77,7 @@ static const int kRTWebAttempts = 3;
             NSMutableArray *items = [NSMutableArray array];
             if (!why) {
                 for (id aweme in raw) {
+                    if ([RTAwemeAPI isAd:RTDict(aweme)]) continue;
                     NSDictionary *item = [RTAwemeAPI normalizeAweme:RTDict(aweme)];
                     if (item) [items addObject:item];
                 }
@@ -137,6 +141,14 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     return best;
 }
 
+// For You ads: paid placements carry ad_aweme_source (22% of an NL feed sample), paid creator posts branded_content_type.
++ (BOOL)isAd:(NSDictionary *)a
+{
+    NSDictionary *commerce = RTDict(a[@"commerce_info"]);
+    return RTNum(a[@"ad_aweme_source"]) > 0 || [a[@"is_ads"] boolValue] || RTDict(a[@"raw_ad_data"]).count
+        || RTNum(commerce[@"branded_content_type"]) > 0;
+}
+
 + (NSDictionary *)normalizeAweme:(NSDictionary *)a
 {
     NSString *vid = RTStr(a[@"aweme_id"]);
@@ -190,6 +202,9 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     NSString *secUID = RTStr(author[@"sec_uid"]);
     if (secUID.length) item[@"sec_uid"] = secUID;
     item[@"create_time"] = @(RTNum(a[@"create_time"]));
+    NSString *lang = [RTFeatures languageForAweme:a];
+    item[@"lang"] = lang;
+    item[@"features"] = [RTFeatures featuresForAweme:a language:lang];
     return item;
 }
 
