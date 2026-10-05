@@ -309,6 +309,30 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     }];
 }
 
+- (void)loadReplies:(NSString *)commentID videoID:(NSString *)videoID cursor:(NSString *)cursor handler:(RTCommentsHandler)handler
+{
+    NSString *q = [NSString stringWithFormat:@"/api/comment/list/reply/?aid=1988&count=5&item_id=%@&comment_id=%@&cursor=%@",
+                   RTURLEncode(videoID), RTURLEncode(commentID), cursor.length ? cursor : @"0"];
+    [self web:q attempt:1 log:nil parse:^id(NSDictionary *json) {
+        if (RTNum(json[@"status_code"])) return [NSString stringWithFormat:@"status %lld %@", RTNum(json[@"status_code"]), RTStr(json[@"status_msg"]) ?: @""];
+        NSArray *list = RTArr(json[@"comments"]);
+        NSMutableArray *replies = [NSMutableArray array];
+        for (id raw in list) {
+            NSDictionary *c = [RTAwemeAPI normalizeComment:RTDict(raw)];
+            if (c) [replies addObject:c];
+        }
+        NSString *next = (list.count && RTBool(json[@"has_more"])) ? RTStr(json[@"cursor"]) : nil;
+        NSMutableDictionary *r = [NSMutableDictionary dictionary];
+        r[@"comments"] = replies;
+        r[@"total"] = @(RTNum(json[@"total"]));
+        if (next.length) r[@"next"] = next;
+        return r;
+    } handler:^(id result, NSError *error) {
+        NSDictionary *r = RTDict(result);
+        handler(RTArr(r[@"comments"]) ?: @[], RTNum(r[@"total"]), r[@"next"], error);
+    }];
+}
+
 + (NSDictionary *)normalizeWebProfile:(NSDictionary *)it
 {
     NSDictionary *author = RTDict(it[@"author"]);
