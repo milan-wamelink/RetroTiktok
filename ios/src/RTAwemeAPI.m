@@ -287,6 +287,37 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     }];
 }
 
+#pragma mark Web QR login (Login Test diagnostic)
+
+- (void)loginQRCodeWithLog:(RTFeedLog)log handler:(void (^)(NSDictionary *qr, NSError *error))handler
+{
+    [self web:@"/passport/web/get_qrcode/?next=https%3A%2F%2Fwww.tiktok.com&aid=1459" attempt:1 log:log parse:^id(NSDictionary *json) {
+        NSDictionary *d = RTDict(json[@"data"]);
+        NSString *b64 = RTStr(d[@"qrcode"]), *token = RTStr(d[@"token"]);
+        if (!b64.length || !token.length)
+            return [NSString stringWithFormat:@"no QR code (%@ %@)", RTStr(json[@"message"]) ?: @"", RTStr(d[@"description"]) ?: @""];
+        NSData *png = [[NSData alloc] initWithBase64Encoding:b64];
+        if (!png.length) return @"QR code is not base64";
+        return @{ @"token": token, @"png": png, @"expire": @(RTNum(d[@"expire_time"])) };
+    } handler:handler];
+}
+
+- (void)checkLoginQR:(NSString *)token handler:(void (^)(NSDictionary *state, NSError *error))handler
+{
+    NSString *q = [NSString stringWithFormat:@"/passport/web/check_qrconnect/?next=https%%3A%%2F%%2Fwww.tiktok.com&aid=1459&token=%@",
+                   RTURLEncode(token)];
+    // attempt == kRTWebAttempts: one try per poll, the caller polls again.
+    [self web:q attempt:kRTWebAttempts log:nil parse:^id(NSDictionary *json) {
+        NSDictionary *d = RTDict(json[@"data"]);
+        return @{ @"message": RTStr(json[@"message"]) ?: @"",
+                  @"status": RTStr(d[@"status"]) ?: @"",
+                  @"error_code": @(RTNum(d[@"error_code"])),
+                  @"description": RTStr(d[@"description"]) ?: @"",
+                  @"has_redirect": @(RTStr(d[@"redirect_url"]).length > 0),
+                  @"keys": [[d.allKeys sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","] };
+    } handler:handler];
+}
+
 + (NSDictionary *)normalizeWebProfile:(NSDictionary *)it
 {
     NSDictionary *author = RTDict(it[@"author"]);

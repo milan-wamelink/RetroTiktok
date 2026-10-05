@@ -1,6 +1,7 @@
 #import "RTSettingsViewController.h"
 #import "RTAwemeAPI.h"
 #import "RTHTTPClient.h"
+#import "RTLoginTestViewController.h"
 #import "RTMilestoneViewController.h"
 #import "RTSettings.h"
 #import "RTTheme.h"
@@ -67,7 +68,7 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
-        case RTSectionSource: return 4;
+        case RTSectionSource: return 5;
         case RTSectionPlayback: return 1;
         default: return 2;
     }
@@ -86,7 +87,8 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 {
     if (section == RTSectionSource)
         return @"LegacyTikTok talks to TikTok directly with its own TLS. No server or computer is needed. "
-               @"The pipeline test checks every step and shows a log you can copy.";
+               @"The pipeline test checks every step and shows a log you can copy. The login test only checks whether "
+               @"TikTok's QR login answers this phone; it saves nothing.";
     if (section == RTSectionAbout)
         return @"LegacyTikTok is not affiliated with TikTok or ByteDance. It only shows public videos.";
     return nil;
@@ -108,9 +110,13 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
             cell.textLabel.text = @"Video Cache";
             cell.detailTextLabel.text = [self cacheSummary];
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-        } else {
+        } else if (indexPath.row == 3) {
             cell.textLabel.text = @"Cache Limit";
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld MB", (long)[RTSettings cacheLimitMB]];
+            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        } else if (indexPath.row == 4) {
+            cell.textLabel.text = @"Login Test";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         }
     } else if (indexPath.section == RTSectionPlayback) {
@@ -145,6 +151,10 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
                                                   otherButtonTitles:@"10 MB", @"25 MB", @"50 MB", @"100 MB", nil];
         sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
         [sheet showFromTabBar:self.tabBarController.tabBar];
+    } else if (indexPath.row == 4) {
+        RTLoginTestViewController *test = [[RTLoginTestViewController alloc] init];
+        test.hidesBottomBarWhenPushed = YES;
+        [self.navigationController pushViewController:test animated:YES];
     }
 }
 
