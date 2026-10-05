@@ -3,7 +3,6 @@
 #import "RTFeedViewController.h"
 #import "RTImageLoader.h"
 #import "RTTheme.h"
-#import "RTVideoCache.h"
 
 static const CGFloat kRTGridGap = 1;
 
@@ -334,22 +333,11 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
         if (tile.hidden) continue;
         NSDictionary *item = self.items[idx];
         tile.tag = (NSInteger)idx;
-        [tile addTarget:self action:@selector(tileTouched:) forControlEvents:UIControlEventTouchDown];
         [tile addTarget:self action:@selector(tileTapped:) forControlEvents:UIControlEventTouchUpInside];
         [[RTImageLoader shared] loadPath:RTStr(item[@"thumb_url"]) into:tile.cover placeholder:nil];
         tile.plays.text = [@"\u25B8 " stringByAppendingString:RTShortCount(RTNum(item[@"plays"]))];
     }
     return cell;
-}
-
-// Head start: begin the download on touch-down; the player's fetch for the same id joins it (RTVideoCache dedupes).
-- (void)tileTouched:(UIButton *)sender
-{
-    if (sender.tag < 0 || sender.tag >= (NSInteger)self.items.count) return;
-    NSDictionary *item = self.items[(NSUInteger)sender.tag];
-    RTVideoCache *cache = [RTVideoCache shared];
-    cache.protectedIDs = [(cache.protectedIDs ?: [NSSet set]) setByAddingObject:RTStr(item[@"id"])];
-    [cache fetchItem:item handler:^(NSString *path, RTHTTPResponse *response, NSError *error) {}];
 }
 
 - (void)tileTapped:(UIButton *)sender
