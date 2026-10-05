@@ -1,4 +1,5 @@
 #import "RTMilestoneViewController.h"
+#import "RTSettings.h"
 #import <AVFoundation/AVFoundation.h>
 #import "RTHTTPClient.h"
 #import "RTAwemeAPI.h"
@@ -168,6 +169,13 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
     [self.source loadFeedRefresh:YES log:^(NSString *line) { [weakSelf say:line]; } handler:^(NSArray *items, NSError *error) {
         if (error) { [self fail:error.localizedDescription]; return; }
         [self say:[NSString stringWithFormat:@"OK in %@: %lu videos", [self elapsed], (unsigned long)items.count]];
+        NSCountedSet *langs = [NSCountedSet set];
+        for (NSDictionary *item in items) [langs addObject:RTStr(item[@"lang"]) ?: @"?"];
+        NSMutableArray *parts = [NSMutableArray array];
+        for (NSString *lang in langs)
+            [parts addObject:[NSString stringWithFormat:@"%@ %lu%@", lang, (unsigned long)[langs countForObject:lang],
+                              [RTSettings levelForLanguage:lang] ? [NSString stringWithFormat:@" (%ld)", (long)[RTSettings levelForLanguage:lang]] : @""]];
+        [self say:[NSString stringWithFormat:@"feed region %@, languages: %@", [RTSettings feedRegion], [parts componentsJoinedByString:@", "]]];
         [self stepPick:items];
     }];
 }

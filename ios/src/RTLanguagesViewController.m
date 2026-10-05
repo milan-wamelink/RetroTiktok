@@ -3,7 +3,7 @@
 
 @interface RTLanguagesViewController () <UIActionSheetDelegate>
 @property (nonatomic, strong) NSArray *languages;   // @[code, name]
-@property (nonatomic, copy) NSString *editing;
+@property (nonatomic, copy) NSString *editingCode;   // not "editing": that is UIViewController's BOOL
 @end
 
 @implementation RTLanguagesViewController
@@ -61,7 +61,7 @@
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     NSArray *lang = self.languages[(NSUInteger)indexPath.row];
-    self.editing = lang[0];
+    self.editingCode = lang[0];
     UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:lang[1] delegate:self cancelButtonTitle:@"Cancel"
                                          destructiveButtonTitle:@"Block" otherButtonTitles:@"Prefer", @"Normal", @"Reduce", nil];
     sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
@@ -70,12 +70,12 @@
 
 - (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex
 {
-    if (buttonIndex == actionSheet.cancelButtonIndex || !self.editing) return;
+    if (buttonIndex == actionSheet.cancelButtonIndex || !self.editingCode) return;
     NSString *title = [actionSheet buttonTitleAtIndex:buttonIndex];
     RTLevel level = [title isEqualToString:@"Block"] ? RTLevelBlock : [title isEqualToString:@"Prefer"] ? RTLevelPrefer
                   : [title isEqualToString:@"Reduce"] ? RTLevelReduce : RTLevelNormal;
-    [RTSettings setLevel:level forLanguage:self.editing];
-    self.editing = nil;
+    [RTSettings setLevel:level forLanguage:self.editingCode];
+    self.editingCode = nil;
     [self.tableView reloadData];
 }
 
