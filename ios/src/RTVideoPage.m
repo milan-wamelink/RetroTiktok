@@ -294,6 +294,15 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     RTMain(^{
         if (object != self.playerItem) return;
         if (self.playerItem.status == AVPlayerItemStatusReadyToPlay) {
+            // iOS 6: the first video played after a cold start can have sound but no picture until a fresh player is
+            // made (what swiping away and back does). Do that once per launch, from the now-cached file.
+            static BOOL reloadedFirstPlayer;
+            if (!reloadedFirstPlayer && self.active) {
+                reloadedFirstPlayer = YES;
+                [self unload];
+                [self preload];
+                return;
+            }
             [self applySound];
             [self.spinner stopAnimating];
             [UIView animateWithDuration:0.25 animations:^{ self.playerView.alpha = 1; }];

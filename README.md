@@ -5,7 +5,7 @@ app in the iOS 6 style that **talks to TikTok directly**. There is no proxy, ser
 
 Not affiliated with TikTok or ByteDance. It only shows public content. No login is needed.
 
-> **Status: V2 (0.4.0) in testing.** V1 (0.3.1: swipeable direct For You feed, cached playback, prefetch, size-capped
+> **Status: V2 (0.4.1).** V1 (0.3.1: swipeable direct For You feed, cached playback, prefetch, size-capped
 > cache) runs smoothly on a real iPhone 4S / iOS 6.1.3. V2 adds **creator profiles** (tap the avatar or @name) and
 > **comments** (tap the comment button). The pipeline test is still under **Settings > Pipeline Test**.
 
@@ -49,8 +49,8 @@ Get `nl.retrotok.legacytiktok_*_iphoneos-arm.deb` from the CI artifacts (`Legacy
 yourself (see below).
 
 ```sh
-scp nl.retrotok.legacytiktok_0.4.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
-ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.4.0_iphoneos-arm.deb
+scp nl.retrotok.legacytiktok_0.4.1_iphoneos-arm.deb root@<iphone-ip>:/tmp/
+ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.4.1_iphoneos-arm.deb
 ```
 
 Or open the .deb in iFile and tap Install. The package:
@@ -97,7 +97,7 @@ GitHub Actions (`.github/workflows/build.yml`) builds the .deb and an .ipa on ev
 | version | what | status |
 |---------|------|--------|
 | V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | done (0.3.1, tested on a 4S) |
-| V2 | creator profiles, comments | **0.4.0 in testing** |
+| V2 | creator profiles, comments | **0.4.1, tested on iPhone 4S** |
 | V3 | likes / favorites | |
 | V4 | search | |
 | V5 | login | |
