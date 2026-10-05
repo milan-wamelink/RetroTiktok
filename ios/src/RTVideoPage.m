@@ -80,7 +80,8 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     if ((self = [super initWithFrame:frame])) {
         self.backgroundColor = [UIColor blackColor];
         self.clipsToBounds = YES;
-        UIViewContentMode mode = RTIsPad() ? UIViewContentModeScaleAspectFit : UIViewContentModeScaleAspectFill;
+        // Show the whole frame (black bars where the aspect differs) instead of cropping to fill the screen.
+        UIViewContentMode mode = UIViewContentModeScaleAspectFit;
 
         _coverView = [[UIImageView alloc] init];
         _coverView.contentMode = mode;
@@ -90,7 +91,7 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
         _playerView = [[RTPlayerView alloc] init];
         _playerView.backgroundColor = [UIColor clearColor];
         _playerView.userInteractionEnabled = NO;
-        ((AVPlayerLayer *)_playerView.layer).videoGravity = RTIsPad() ? AVLayerVideoGravityResizeAspect : AVLayerVideoGravityResizeAspectFill;
+        ((AVPlayerLayer *)_playerView.layer).videoGravity = AVLayerVideoGravityResizeAspect;
         _playerView.alpha = 0;
         [self addSubview:_playerView];
 
