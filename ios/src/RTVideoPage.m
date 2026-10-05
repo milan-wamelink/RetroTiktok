@@ -20,6 +20,9 @@ static NSInteger RTLivePlayers;
 @interface RTVideoPage ()
 @property (nonatomic, strong, readwrite) NSDictionary *item;
 @property (nonatomic, assign, readwrite) BOOL active;
+@property (nonatomic, assign, readwrite) double playedSeconds;
+@property (nonatomic, assign, readwrite) double mediaDuration;
+@property (nonatomic, assign, readwrite) BOOL showedVideo;
 @property (nonatomic, assign) BOOL paused;
 @property (nonatomic, assign) BOOL preparing;
 @property (nonatomic, assign) NSUInteger generation;
@@ -205,6 +208,9 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     }
     [self unload];
     self.item = item;
+    self.playedSeconds = 0;
+    self.mediaDuration = 0;
+    self.showedVideo = NO;
     self.coverView.image = nil;
     [[RTImageLoader shared] loadPath:RTStr(item[@"cover_url"]) into:self.coverView placeholder:nil];
     [[RTImageLoader shared] loadPath:RTStr(item[@"avatar_url"]) into:self.avatarView placeholder:[RTTheme avatarPlaceholder]];
@@ -319,6 +325,8 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
 
 - (void)itemDidReachEnd:(NSNotification *)note
 {
+    double d = CMTimeGetSeconds(self.playerItem.duration);
+    if (self.active && isfinite(d) && d > 0) { self.playedSeconds += d; self.mediaDuration = d; }
     [self.playerItem seekToTime:kCMTimeZero];
     if (self.active && !self.paused) [self.player play];
 }
@@ -357,10 +365,17 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
 
 - (void)deactivate
 {
+    BOOL wasActive = self.active;
     self.active = NO;
     self.playIcon.hidden = YES;
     [self.spinner stopAnimating];
     [self.player pause];
+    if (wasActive && self.playerItem.status == AVPlayerItemStatusReadyToPlay) {
+        double t = CMTimeGetSeconds(self.playerItem.currentTime), d = CMTimeGetSeconds(self.playerItem.duration);
+        if (isfinite(t) && t > 0) self.playedSeconds += t;
+        if (isfinite(d) && d > 0) self.mediaDuration = d;
+        self.showedVideo = YES;
+    }
     if (self.playerItem.status == AVPlayerItemStatusReadyToPlay) [self.playerItem seekToTime:kCMTimeZero];
 }
 
@@ -426,7 +441,12 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
         self.playerView.alpha, self.playerView.hidden,
         lf.origin.x, lf.origin.y, lf.size.width, lf.size.height, self.window != nil, self.superview != nil && !self.superview.hidden,
         self.frame.origin.y, self.frame.size.width, self.frame.size.height, since(self.readyAt), since(self.displayAt)];
-    self.debugLabel.frame = CGRectMake(4, 4, self.bounds.size.width - 8, 66);
+    NSString *why = RTStr(self.item[@"rank_why"]);
+    if (why.length)
+        self.debugLabel.text = [self.debugLabel.text stringByAppendingFormat:@"\nFYP %@ %.2f %@: %@", RTStr(self.item[@"lang"]) ?: @"?",
+                                [self.item[@"rank_score"] doubleValue], RTStr(self.item[@"rank_pick"]) ?: @"", why];
+    CGSize fit = [self.debugLabel sizeThatFits:CGSizeMake(self.bounds.size.width - 8, 200)];
+    self.debugLabel.frame = CGRectMake(4, 4, self.bounds.size.width - 8, MAX(66, fit.height));
 }
 
 #pragma mark Touches

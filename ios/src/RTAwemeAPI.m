@@ -1,4 +1,5 @@
 #import "RTAwemeAPI.h"
+#import "RTFeatures.h"
 #import "rt_xbogus.h"
 #include <time.h>
 #import "RTHTTPClient.h"
@@ -190,6 +191,9 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     NSString *secUID = RTStr(author[@"sec_uid"]);
     if (secUID.length) item[@"sec_uid"] = secUID;
     item[@"create_time"] = @(RTNum(a[@"create_time"]));
+    NSString *lang = [RTFeatures languageForAweme:a];
+    item[@"lang"] = lang;
+    item[@"features"] = [RTFeatures featuresForAweme:a language:lang];
     return item;
 }
 
