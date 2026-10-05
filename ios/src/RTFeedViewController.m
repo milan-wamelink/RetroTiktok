@@ -301,6 +301,8 @@
             page.frame = CGRectMake(0, i * size.height, size.width, size.height);
         }
     }
+    // A page without a video still sits at its loadView frame (0,0), on top of the first video.
+    for (RTVideoPage *page in self.pages) page.hidden = page.index < 0;
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
