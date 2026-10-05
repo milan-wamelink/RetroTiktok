@@ -26,6 +26,7 @@
 @property (nonatomic, assign) NSInteger startIndex;
 @property (nonatomic, assign) BOOL subFeed;
 @property (nonatomic, assign) BOOL releasedPlayers;
+@property (nonatomic, strong) NSTimer *debugTimer;
 @end
 
 @implementation RTFeedViewController
@@ -138,6 +139,7 @@
 {
     [super viewDidAppear:animated];
     self.visible = YES;
+    [self startDebugTimer];
     if (self.releasedPlayers) {
         self.releasedPlayers = NO;
         [self pageSettled];
@@ -164,6 +166,8 @@
 {
     [super viewWillDisappear:animated];
     self.visible = NO;
+    [self.debugTimer invalidate];
+    self.debugTimer = nil;
     [self pausePlayback];
 }
 
@@ -200,6 +204,22 @@
 - (void)settingsChanged
 {
     for (RTVideoPage *page in self.pages) [page applySound];
+    [self startDebugTimer];
+}
+
+// The timer retains self, so it only runs while this feed is on screen.
+- (void)startDebugTimer
+{
+    [self.debugTimer invalidate];
+    self.debugTimer = nil;
+    [self debugTick];
+    if ([RTSettings playerDebug] && self.visible)
+        self.debugTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(debugTick) userInfo:nil repeats:YES];
+}
+
+- (void)debugTick
+{
+    for (RTVideoPage *page in self.pages) [page updateDebug];
 }
 
 - (void)favoritesChanged

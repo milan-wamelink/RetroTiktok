@@ -8,6 +8,7 @@
 #import "RTTheme.h"
 
 static void *RTItemStatusContext = &RTItemStatusContext;
+static NSInteger RTLivePlayers;
 
 @interface RTPlayerView : UIView
 @end
@@ -27,6 +28,10 @@ static void *RTItemStatusContext = &RTItemStatusContext;
 
 @property (nonatomic, strong) UIImageView *coverView;
 @property (nonatomic, strong) RTPlayerView *playerView;
+@property (nonatomic, strong) UILabel *debugLabel;
+@property (nonatomic, strong) NSDate *attachedAt;
+@property (nonatomic, strong) NSDate *readyAt;
+@property (nonatomic, strong) NSDate *displayAt;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UIImageView *playIcon;
 @property (nonatomic, strong) UILabel *messageLabel;
@@ -281,6 +286,10 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(itemDidReachEnd:)
                                                  name:AVPlayerItemDidPlayToEndTimeNotification object:self.playerItem];
     self.player = [AVPlayer playerWithPlayerItem:self.playerItem];
+    RTLivePlayers++;
+    self.attachedAt = [NSDate date];
+    self.readyAt = nil;
+    self.displayAt = nil;
     self.player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
     ((AVPlayerLayer *)self.playerView.layer).player = self.player;
     if (self.active && !self.paused) [self.player play];
@@ -295,6 +304,7 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     RTMain(^{
         if (object != self.playerItem) return;
         if (self.playerItem.status == AVPlayerItemStatusReadyToPlay) {
+            if (!self.readyAt) self.readyAt = [NSDate date];
             [self applySound];
             [self.spinner stopAnimating];
             [UIView animateWithDuration:0.25 animations:^{ self.playerView.alpha = 1; }];
@@ -363,10 +373,60 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
         [self.playerItem removeObserver:self forKeyPath:@"status" context:RTItemStatusContext];
         [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:self.playerItem];
     }
+    if (self.player) RTLivePlayers--;
     ((AVPlayerLayer *)self.playerView.layer).player = nil;
     self.playerView.alpha = 0;
     self.player = nil;
     self.playerItem = nil;
+}
+
+#pragma mark Player Debug
+
+// Read-only: reports the player state, never changes it.
+- (void)updateDebug
+{
+    if (![RTSettings playerDebug]) {
+        self.debugLabel.hidden = YES;
+        return;
+    }
+    if (!self.debugLabel) {
+        UILabel *l = [[UILabel alloc] init];
+        l.font = [UIFont fontWithName:@"Courier-Bold" size:10];
+        l.textColor = [UIColor colorWithRed:0.4 green:1 blue:0.4 alpha:1];
+        l.backgroundColor = [UIColor colorWithWhite:0 alpha:0.65];
+        l.numberOfLines = 0;
+        l.userInteractionEnabled = NO;
+        [self addSubview:l];
+        self.debugLabel = l;
+    }
+    [self bringSubviewToFront:self.debugLabel];
+    self.debugLabel.hidden = NO;
+
+    AVPlayerLayer *pl = (AVPlayerLayer *)self.playerView.layer;
+    AVPlayerItem *it = self.playerItem;
+    if (pl.readyForDisplay && !self.displayAt && self.attachedAt) self.displayAt = [NSDate date];
+    NSString *status = !it ? (self.preparing ? @"loading" : @"none")
+                     : it.status == AVPlayerItemStatusReadyToPlay ? @"ready"
+                     : it.status == AVPlayerItemStatusFailed ? @"FAILED" : @"unknown";
+    NSString *(^since)(NSDate *) = ^NSString *(NSDate *d) {
+        return (d && self.attachedAt) ? [NSString stringWithFormat:@"%.1fs", [d timeIntervalSinceDate:self.attachedAt]] : @"-";
+    };
+    CGSize pres = it ? it.presentationSize : CGSizeZero;
+    CGRect lf = pl.frame;
+    double t = it ? CMTimeGetSeconds(it.currentTime) : 0;
+    self.debugLabel.text = [NSString stringWithFormat:
+        @"page %ld %@%@ live players %ld\n"
+        @"item %@ rate %.1f t %.1f pres %.0fx%.0f\n"
+        @"DISPLAY %@ layer.player %@ alpha %.2f hidden %d\n"
+        @"layer %.0f,%.0f %.0fx%.0f win %d super %d\n"
+        @"page y %.0f %.0fx%.0f attach>ready %@ >display %@",
+        (long)self.index, self.active ? @"ACTIVE" : @"idle", self.paused ? @" paused" : @"", (long)RTLivePlayers,
+        status, self.player.rate, isnan(t) ? 0 : t, pres.width, pres.height,
+        pl.readyForDisplay ? @"YES" : @"NO", !pl.player ? @"nil" : (pl.player == self.player ? @"ok" : @"OTHER"),
+        self.playerView.alpha, self.playerView.hidden,
+        lf.origin.x, lf.origin.y, lf.size.width, lf.size.height, self.window != nil, self.superview != nil && !self.superview.hidden,
+        self.frame.origin.y, self.frame.size.width, self.frame.size.height, since(self.readyAt), since(self.displayAt)];
+    self.debugLabel.frame = CGRectMake(4, 4, self.bounds.size.width - 8, 66);
 }
 
 #pragma mark Touches

@@ -10,6 +10,7 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 
 @interface RTSettingsViewController () <UIAlertViewDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UISwitch *soundSwitch;
+@property (nonatomic, strong) UISwitch *debugSwitch;
 @end
 
 @implementation RTSettingsViewController
@@ -29,6 +30,9 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
     self.soundSwitch = [[UISwitch alloc] init];
     self.soundSwitch.on = [RTSettings soundOn];
     [self.soundSwitch addTarget:self action:@selector(soundChanged) forControlEvents:UIControlEventValueChanged];
+    self.debugSwitch = [[UISwitch alloc] init];
+    self.debugSwitch.on = [RTSettings playerDebug];
+    [self.debugSwitch addTarget:self action:@selector(debugChanged) forControlEvents:UIControlEventValueChanged];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -40,6 +44,11 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 
 - (BOOL)shouldAutorotate { return NO; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskPortrait; }
+
+- (void)debugChanged
+{
+    [RTSettings setPlayerDebug:self.debugSwitch.on];
+}
 
 - (void)soundChanged
 {
@@ -68,7 +77,7 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 {
     switch (section) {
         case RTSectionSource: return 4;
-        case RTSectionPlayback: return 1;
+        case RTSectionPlayback: return 2;
         default: return 2;
     }
 }
@@ -87,6 +96,8 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
     if (section == RTSectionSource)
         return @"LegacyTikTok talks to TikTok directly with its own TLS. No server or computer is needed. "
                @"The pipeline test checks every step and shows a log you can copy.";
+    if (section == RTSectionPlayback)
+        return @"Player Debug shows each video's player state on screen, to track down the black first video.";
     if (section == RTSectionAbout)
         return @"LegacyTikTok is not affiliated with TikTok or ByteDance. It only shows public videos.";
     return nil;
@@ -114,8 +125,8 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         }
     } else if (indexPath.section == RTSectionPlayback) {
-        cell.textLabel.text = @"Sound";
-        cell.accessoryView = self.soundSwitch;
+        cell.textLabel.text = indexPath.row == 0 ? @"Sound" : @"Player Debug";
+        cell.accessoryView = indexPath.row == 0 ? self.soundSwitch : self.debugSwitch;
     } else if (indexPath.row == 0) {
         cell.textLabel.text = @"Version";
         cell.detailTextLabel.text = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
