@@ -4,6 +4,9 @@
 static NSString * const kRTAwemeHost = @"https://api19-core-c-useast1a.tiktokv.com";
 static NSString * const kRTAwemeUA = @"com.zhiliaoapp.musically/2023600040 (Linux; U; Android 13; en_US; Pixel 7; Build/TQ3A.230805.001; Cronet/58.0.2991.0)";
 static const int kRTAwemeAttempts = 6;
+static NSString * const kRTWebHost = @"https://www.tiktok.com";
+static NSString * const kRTWebUA = @"Mozilla/5.0 (iPhone; CPU iPhone OS 6_1_3 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10B329 Safari/8536.25";
+static const int kRTWebAttempts = 3;
 
 @interface RTAwemeAPI ()
 @property (nonatomic, assign) BOOL loadedOnce;
@@ -182,7 +185,204 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     if (cover) item[@"cover_url"] = cover;
     NSString *avatar = RTPickJPEG(@[ RTURLList(author[@"avatar_thumb"]), RTURLList(author[@"avatar_medium"]) ]);
     if (avatar) item[@"avatar_url"] = avatar;
+    NSString *secUID = RTStr(author[@"sec_uid"]);
+    if (secUID.length) item[@"sec_uid"] = secUID;
     return item;
+}
+
+#pragma mark Web endpoints (profiles, comments)
+
+// parse runs off the main thread and returns the result, or an NSString saying why the answer is unusable (retried).
+- (void)web:(NSString *)pathAndQuery attempt:(int)n log:(RTFeedLog)log parse:(id (^)(NSDictionary *json))parse
+    handler:(void (^)(id result, NSError *error))handler
+{
+    NSURL *url = [NSURL URLWithString:[kRTWebHost stringByAppendingString:pathAndQuery]];
+    NSDictionary *headers = @{ @"User-Agent": kRTWebUA, @"Referer": @"https://www.tiktok.com/", @"Accept": @"application/json" };
+    [[RTHTTPClient shared] GET:url headers:headers handler:^(RTHTTPResponse *resp, NSError *error) {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            id result = nil;
+            NSString *why = nil;
+            if (error) why = error.localizedDescription;
+            else if (resp.status != 200) why = [NSString stringWithFormat:@"HTTP %ld", (long)resp.status];
+            else if (!resp.data.length) why = @"empty answer";
+            else {
+                NSDictionary *json = RTDict([NSJSONSerialization JSONObjectWithData:resp.data options:0 error:NULL]);
+                if (!json) why = @"not JSON";
+                else {
+                    result = parse(json);
+                    if ([result isKindOfClass:[NSString class]]) { why = result; result = nil; }
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (log) log([NSString stringWithFormat:@"%@ attempt %d: HTTP %ld, %lld bytes in %.1fs%@%@", url.path, n, (long)resp.status,
+                              resp.bytes, resp.duration, resp.tlsInfo.length ? [@", " stringByAppendingString:resp.tlsInfo] : @"",
+                              why ? [@" - " stringByAppendingString:why] : @""]);
+                if (!why) { handler(result, nil); return; }
+                if (n >= kRTWebAttempts) {
+                    handler(nil, RTMakeError(-1, [NSString stringWithFormat:@"TikTok sent nothing usable after %d tries (%@).", n, why]));
+                    return;
+                }
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [self web:pathAndQuery attempt:n + 1 log:log parse:parse handler:handler];
+                });
+            });
+        });
+    }];
+}
+
+// www.tiktok.com/api/creator/item_list: newest first, paged backwards by creation time (milliseconds). The cursor is
+// inclusive, so the next page repeats the last video; screens dedupe by id.
+- (void)loadProfileVideos:(NSString *)secUID cursor:(NSString *)cursor log:(RTFeedLog)log handler:(RTProfileHandler)handler
+{
+    if (!secUID.length) { handler(nil, nil, nil, RTMakeError(-1, @"TikTok sent no profile id for this video.")); return; }
+    NSString *c = cursor.length ? cursor : [NSString stringWithFormat:@"%lld", (long long)([[NSDate date] timeIntervalSince1970] * 1000)];
+    NSString *q = [NSString stringWithFormat:@"/api/creator/item_list/?aid=1988&count=12&type=1&secUid=%@&cursor=%@", RTURLEncode(secUID), c];
+    [self web:q attempt:1 log:log parse:^id(NSDictionary *json) {
+        long long status = RTNum(json[@"statusCode"]) ?: RTNum(json[@"status_code"]);
+        if (status) return [NSString stringWithFormat:@"status %lld %@", status, RTStr(json[@"status_msg"]) ?: @""];
+        NSArray *list = RTArr(json[@"itemList"]);
+        NSMutableArray *items = [NSMutableArray array];
+        NSDictionary *profile = nil;
+        for (id raw in list) {
+            NSDictionary *it = RTDict(raw);
+            if (!profile) profile = [RTAwemeAPI normalizeWebProfile:it];
+            NSDictionary *item = [RTAwemeAPI normalizeWebItem:it];
+            if (item) [items addObject:item];
+        }
+        long long last = list.count ? RTNum(RTDict(list[list.count - 1])[@"createTime"]) : 0;
+        NSString *next = (last && RTBool(json[@"hasMorePrevious"])) ? [NSString stringWithFormat:@"%lld", last * 1000] : nil;
+        if ([next isEqualToString:c]) next = nil;
+        NSMutableDictionary *r = [NSMutableDictionary dictionary];
+        r[@"items"] = items;
+        if (profile) r[@"profile"] = profile;
+        if (next) r[@"next"] = next;
+        return r;
+    } handler:^(id result, NSError *error) {
+        NSDictionary *r = RTDict(result);
+        handler(r[@"profile"], RTArr(r[@"items"]) ?: @[], r[@"next"], error);
+    }];
+}
+
+- (void)loadComments:(NSString *)videoID cursor:(NSString *)cursor log:(RTFeedLog)log handler:(RTCommentsHandler)handler
+{
+    NSString *q = [NSString stringWithFormat:@"/api/comment/list/?aid=1988&count=20&aweme_id=%@&cursor=%@", RTURLEncode(videoID),
+                   cursor.length ? cursor : @"0"];
+    [self web:q attempt:1 log:log parse:^id(NSDictionary *json) {
+        if (RTNum(json[@"status_code"])) return [NSString stringWithFormat:@"status %lld %@", RTNum(json[@"status_code"]), RTStr(json[@"status_msg"]) ?: @""];
+        NSArray *list = RTArr(json[@"comments"]);
+        NSMutableArray *comments = [NSMutableArray array];
+        for (id raw in list) {
+            NSDictionary *c = [RTAwemeAPI normalizeComment:RTDict(raw)];
+            if (c) [comments addObject:c];
+        }
+        NSString *next = (list.count && RTBool(json[@"has_more"])) ? RTStr(json[@"cursor"]) : nil;
+        NSMutableDictionary *r = [NSMutableDictionary dictionary];
+        r[@"comments"] = comments;
+        r[@"total"] = @(RTNum(json[@"total"]));
+        if (next.length) r[@"next"] = next;
+        return r;
+    } handler:^(id result, NSError *error) {
+        NSDictionary *r = RTDict(result);
+        handler(RTArr(r[@"comments"]) ?: @[], RTNum(r[@"total"]), r[@"next"], error);
+    }];
+}
+
++ (NSDictionary *)normalizeWebProfile:(NSDictionary *)it
+{
+    NSDictionary *author = RTDict(it[@"author"]);
+    NSDictionary *stats = RTDict(it[@"authorStats"]);
+    if (!author) return nil;
+    NSMutableDictionary *p = [NSMutableDictionary dictionary];
+    p[@"author"] = RTStr(author[@"uniqueId"]) ?: @"";
+    p[@"nickname"] = RTStr(author[@"nickname"]) ?: @"";
+    p[@"signature"] = RTStr(author[@"signature"]) ?: @"";
+    NSString *sec = RTStr(author[@"secUid"]);
+    if (sec) p[@"sec_uid"] = sec;
+    NSString *avatar = RTPickJPEG(@[ @[ RTStr(author[@"avatarMedium"]) ?: @"" ], @[ RTStr(author[@"avatarThumb"]) ?: @"" ] ]);
+    if (avatar) p[@"avatar_url"] = avatar;
+    p[@"followers"] = @(RTNum(stats[@"followerCount"]));
+    p[@"following"] = @(RTNum(stats[@"followingCount"]));
+    p[@"hearts"] = @(RTNum(stats[@"heartCount"]) ?: RTNum(stats[@"heart"]));
+    p[@"videos"] = @(RTNum(stats[@"videoCount"]));
+    return p;
+}
+
+// Same rules as normalizeAweme: H.264 only, the largest rendition up to 576 wide.
++ (NSDictionary *)normalizeWebItem:(NSDictionary *)it
+{
+    NSString *vid = RTStr(it[@"id"]);
+    NSDictionary *video = RTDict(it[@"video"]);
+    if (!vid.length || !video || it[@"imagePost"]) return nil;
+
+    NSArray *urls = nil;
+    long long chosenW = 0, chosenSize = 0, width = 0, height = 0;
+    for (id entry in RTArr(video[@"bitrateInfo"])) {
+        NSDictionary *b = RTDict(entry);
+        if ([[RTStr(b[@"CodecType"]) lowercaseString] rangeOfString:@"h264"].location == NSNotFound) continue;
+        NSDictionary *pa = RTDict(b[@"PlayAddr"]);
+        NSMutableArray *list = [NSMutableArray array];
+        for (id u in RTArr(pa[@"UrlList"])) if (RTStr(u).length) [list addObject:RTStr(u)];
+        if (!list.count) continue;
+        long long w = MIN(RTNum(pa[@"Width"]), RTNum(pa[@"Height"]));
+        long long size = RTNum(pa[@"DataSize"]);
+        BOOL better = !urls || (w <= 576 && (chosenW > 576 || w > chosenW)) || (w > 576 && chosenW > 576 && w < chosenW)
+                   || (w == chosenW && size > 0 && size < chosenSize);
+        if (better) { urls = list; chosenW = w; chosenSize = size; width = RTNum(pa[@"Width"]); height = RTNum(pa[@"Height"]); }
+    }
+    if (!urls && [[RTStr(video[@"codecType"]) lowercaseString] isEqualToString:@"h264"] && RTStr(video[@"playAddr"]).length)
+        urls = @[ RTStr(video[@"playAddr"]) ];
+    if (!urls.count) return nil;
+
+    NSDictionary *author = RTDict(it[@"author"]);
+    NSDictionary *stats = RTDict(it[@"stats"]);
+    NSDictionary *music = RTDict(it[@"music"]);
+    NSString *user = RTStr(author[@"uniqueId"]);
+    NSMutableDictionary *item = [NSMutableDictionary dictionary];
+    item[@"id"] = vid;
+    item[@"desc"] = RTStr(it[@"desc"]) ?: @"";
+    item[@"author"] = user ?: @"";
+    item[@"nickname"] = RTStr(author[@"nickname"]) ?: @"";
+    NSString *sec = RTStr(author[@"secUid"]);
+    if (sec) item[@"sec_uid"] = sec;
+    item[@"video_urls"] = urls;
+    item[@"width"] = @(width ?: RTNum(video[@"width"]));
+    item[@"height"] = @(height ?: RTNum(video[@"height"]));
+    item[@"duration"] = @(RTNum(video[@"duration"]));
+    item[@"likes"] = @(RTNum(stats[@"diggCount"]));
+    item[@"comments"] = @(RTNum(stats[@"commentCount"]));
+    item[@"shares"] = @(RTNum(stats[@"shareCount"]));
+    item[@"plays"] = @(RTNum(stats[@"playCount"]));
+    item[@"music"] = RTStr(music[@"title"]) ?: @"";
+    item[@"music_author"] = RTStr(music[@"authorName"]) ?: @"";
+    item[@"web_url"] = [NSString stringWithFormat:@"https://www.tiktok.com/@%@/video/%@", user ?: @"_", vid];
+    // the web covers end in ".image" but are served as JPEG; originCover is 540x960, plenty for the 4S
+    NSString *cover = RTStr(video[@"originCover"]).length ? RTStr(video[@"originCover"]) : RTStr(video[@"cover"]);
+    if (cover.length) item[@"cover_url"] = cover;
+    NSDictionary *zoom = RTDict(video[@"zoomCover"]);   // "480" is 270x480: sharp in a 3-column grid on Retina
+    NSString *thumb = RTStr(zoom[@"480"]).length ? RTStr(zoom[@"480"]) : RTStr(zoom[@"240"]);
+    item[@"thumb_url"] = thumb.length ? thumb : (cover ?: @"");
+    NSString *avatar = RTStr(author[@"avatarThumb"]);
+    if (avatar.length) item[@"avatar_url"] = avatar;
+    return item;
+}
+
++ (NSDictionary *)normalizeComment:(NSDictionary *)c
+{
+    NSString *cid = RTStr(c[@"cid"]);
+    if (!cid.length) return nil;
+    NSDictionary *user = RTDict(c[@"user"]);
+    NSString *text = RTStr(c[@"text"]);
+    NSMutableDictionary *r = [NSMutableDictionary dictionary];
+    r[@"id"] = cid;
+    r[@"text"] = text.length ? text : @"(sticker)";
+    r[@"author"] = RTStr(user[@"unique_id"]) ?: @"";
+    r[@"nickname"] = RTStr(user[@"nickname"]) ?: @"";
+    NSString *avatar = RTPickJPEG(@[ RTURLList(user[@"avatar_thumb"]) ]);
+    if (avatar) r[@"avatar_url"] = avatar;
+    r[@"likes"] = @(RTNum(c[@"digg_count"]));
+    r[@"replies"] = @(RTNum(c[@"reply_comment_total"]));
+    r[@"time"] = @(RTNum(c[@"create_time"]));
+    return r;
 }
 
 @end

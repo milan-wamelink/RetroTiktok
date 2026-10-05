@@ -68,7 +68,9 @@ typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
     }
     NSURL *url = [NSURL URLWithString:RTStr(urls[i])];
     if (!url) { [self tryURLs:urls index:i + 1 videoID:vid lastError:lastError]; return; }
-    [[RTHTTPClient shared] download:url headers:@{ @"User-Agent": kRTCDNUserAgent } toFile:[self pathForID:vid]
+    // Profile videos (v16-webapp-prime) answer 403 without the Referer; the feed CDN does not mind it.
+    NSDictionary *headers = @{ @"User-Agent": kRTCDNUserAgent, @"Referer": @"https://www.tiktok.com/" };
+    [[RTHTTPClient shared] download:url headers:headers toFile:[self pathForID:vid]
                             handler:^(RTHTTPResponse *resp, NSError *error) {
         if (!error && resp.bytes < 1024) {
             [[NSFileManager defaultManager] removeItemAtPath:resp.filePath error:NULL];

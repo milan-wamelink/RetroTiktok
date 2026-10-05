@@ -22,6 +22,7 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
 @property (nonatomic, strong) AVPlayer *player;
 @property (nonatomic, strong) AVPlayerItem *item;
 @property (nonatomic, strong) NSDate *stepStart;
+@property (nonatomic, strong) NSDictionary *pick;
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) NSUInteger loops;
 @end
@@ -179,6 +180,7 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
     for (NSDictionary *item in items) if (RTNum(item[@"duration"]) > 0 && RTNum(item[@"duration"]) <= 60) { pick = item; break; }
     if (!pick && items.count) pick = items[0];
     if (!pick) { [self fail:@"feed had no playable video"]; return; }
+    self.pick = pick;
     NSArray *urls = RTArr(pick[@"video_urls"]);
     NSURL *first = urls.count ? [NSURL URLWithString:RTStr(urls[0])] : nil;
     [self say:[NSString stringWithFormat:@"@%@: %@", RTStr(pick[@"author"]), RTStr(pick[@"desc"])]];
@@ -243,11 +245,48 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
             [self say:[NSString stringWithFormat:@"OK in %@: playing %.0fx%.0f, %.1fs long", [self elapsed], size.width, size.height,
                        CMTimeGetSeconds(self.item.asset.duration)]];
             self.coverView.image = nil;
-            self.running = NO;
+            if (self.running) [self stepProfile];
         } else if (self.item.status == AVPlayerItemStatusFailed) {
             [self fail:[NSString stringWithFormat:@"AVPlayer: %@", self.item.error.localizedDescription]];
         }
     });
+}
+
+// 7. V2: the picked video's creator profile and videos (www.tiktok.com web endpoint, same mbedTLS stack).
+- (void)stepProfile
+{
+    [self step:@"7. Profile videos (web creator/item_list)"];
+    __weak RTMilestoneViewController *weakSelf = self;
+    [[RTAwemeAPI shared] loadProfileVideos:RTStr(self.pick[@"sec_uid"]) cursor:nil log:^(NSString *line) { [weakSelf say:line]; }
+                                   handler:^(NSDictionary *profile, NSArray *items, NSString *next, NSError *error) {
+        if (error) { [self fail:error.localizedDescription]; return; }
+        [self say:[NSString stringWithFormat:@"OK in %@: @%@, %@ followers, %lld videos; %lu playable on page 1, %@", [self elapsed],
+                   RTStr(profile[@"author"]) ?: RTStr(self.pick[@"author"]), RTShortCount(RTNum(profile[@"followers"])),
+                   RTNum(profile[@"videos"]), (unsigned long)items.count, next ? @"more pages" : @"no more pages"]];
+        if (items.count) {
+            NSArray *urls = RTArr(items[0][@"video_urls"]);
+            [self say:[NSString stringWithFormat:@"first video %@, %@x%@, host %@", items[0][@"id"], items[0][@"width"], items[0][@"height"],
+                       urls.count ? [NSURL URLWithString:RTStr(urls[0])].host : @"-"]];
+        }
+        [self stepComments];
+    }];
+}
+
+// 8. V2: comments of the picked video (www.tiktok.com web endpoint).
+- (void)stepComments
+{
+    [self step:@"8. Comments (web comment/list)"];
+    __weak RTMilestoneViewController *weakSelf = self;
+    [[RTAwemeAPI shared] loadComments:RTStr(self.pick[@"id"]) cursor:nil log:^(NSString *line) { [weakSelf say:line]; }
+                              handler:^(NSArray *comments, long long total, NSString *next, NSError *error) {
+        if (error) { [self fail:error.localizedDescription]; return; }
+        [self say:[NSString stringWithFormat:@"OK in %@: %lu comments of %lld, %@", [self elapsed], (unsigned long)comments.count, total,
+                   next ? @"more pages" : @"no more pages"]];
+        if (comments.count)
+            [self say:[NSString stringWithFormat:@"first: @%@: %@", RTStr(comments[0][@"author"]), RTStr(comments[0][@"text"])]];
+        [self say:@"\nall steps passed"];
+        self.running = NO;
+    }];
 }
 
 - (void)didReachEnd:(NSNotification *)note

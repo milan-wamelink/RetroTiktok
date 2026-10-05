@@ -5,10 +5,9 @@ app in the iOS 6 style that **talks to TikTok directly**. There is no proxy, ser
 
 Not affiliated with TikTok or ByteDance. It only shows public content. No login is needed.
 
-> **Status: V1 milestone 2.** Milestone 1 (the direct pipeline: mbedTLS handshake, aweme feed, JSON, one video URL,
-> download to cache, looping AVPlayer) passed on a real iPhone 4S / iOS 6.1.3. The app now opens the swipeable
-> **For You** feed: pages of aweme results as you scroll, covers as thumbnails, the next two videos downloaded ahead.
-> The pipeline test is still under **Settings > Pipeline Test**.
+> **Status: V2 (0.4.0) in testing.** V1 (0.3.1: swipeable direct For You feed, cached playback, prefetch, size-capped
+> cache) runs smoothly on a real iPhone 4S / iOS 6.1.3. V2 adds **creator profiles** (tap the avatar or @name) and
+> **comments** (tap the comment button). The pipeline test is still under **Settings > Pipeline Test**.
 
 ## How it works
 
@@ -19,7 +18,16 @@ iPhone 4S (iOS 6.1.3)
   -> JSON parsed on the phone -> H.264 rendition picked (<= 576 wide, no HEVC), JPEG covers
   -> MP4 downloaded straight from TikTok's CDN (v16m.tiktokcdn.com first) into the cache folder
   -> AVPlayer plays the local file and loops it
+
+V2, same TLS stack, still no server:
+  -> https://www.tiktok.com/api/creator/item_list/?secUid=...   (profile header + that creator's videos, 12 per page)
+  -> https://www.tiktok.com/api/comment/list/?aweme_id=...      (20 comments per page)
+  -> profile videos come from v16-webapp-prime, which needs "Referer: https://www.tiktok.com/" (sent on every download)
 ```
+
+- **Why web endpoints for V2:** the aweme endpoints for profiles, profile videos and comments now need request
+  signatures (they answer empty or 404 without one). TikTok's public web JSON endpoints above need no signature,
+  login or cookies, and are just as direct. The V1 feed stays on aweme.
 
 - **Why mbedTLS:** TikTok's certificates chain to DigiCert Global Root G2 (API) and G3 (CDN). Those roots are newer
   than iOS 6, so the system TLS stack rejects them. The app bundles mbedTLS 3.6 and its own root list instead. It
@@ -41,8 +49,8 @@ Get `nl.retrotok.legacytiktok_*_iphoneos-arm.deb` from the CI artifacts (`Legacy
 yourself (see below).
 
 ```sh
-scp nl.retrotok.legacytiktok_0.3.1_iphoneos-arm.deb root@<iphone-ip>:/tmp/
-ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.3.1_iphoneos-arm.deb
+scp nl.retrotok.legacytiktok_0.4.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
+ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.4.0_iphoneos-arm.deb
 ```
 
 Or open the .deb in iFile and tap Install. The package:
@@ -57,7 +65,8 @@ An `.ipa` of the same app is also built, for testing.
 
 ### Pipeline test
 
-Open **Settings > Pipeline Test**. It runs automatically; tap **Run** to repeat. When it finishes (or fails), tap
+Open **Settings > Pipeline Test**. It runs automatically; tap **Run** to repeat. Steps 1-6 are the V1 pipeline;
+steps 7 and 8 load the picked video's profile videos and comments. When it finishes (or fails), tap
 **Copy Log** and paste the log into a message. It shows which step failed, the TLS version and cipher, and the
 download speed.
 
@@ -87,8 +96,8 @@ GitHub Actions (`.github/workflows/build.yml`) builds the .deb and an .ipa on ev
 
 | version | what | status |
 |---------|------|--------|
-| V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | milestone 1 (pipeline test) passed on a 4S; **feed + pagination + prefetch in testing** |
-| V2 | creator profiles, comments | |
+| V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | done (0.3.1, tested on a 4S) |
+| V2 | creator profiles, comments | **0.4.0 in testing** |
 | V3 | likes / favorites | |
 | V4 | search | |
 | V5 | login | |

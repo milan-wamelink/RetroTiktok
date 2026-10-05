@@ -4,6 +4,8 @@
 #import "RTSettings.h"
 #import "RTTheme.h"
 #import "RTVideoPage.h"
+#import "RTProfileViewController.h"
+#import "RTCommentsViewController.h"
 
 @interface RTFeedViewController () <UIScrollViewDelegate, RTVideoPageDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UIScrollView *scroll;
@@ -20,6 +22,8 @@
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) NSDictionary *shareItem;
 @property (nonatomic, strong) id<RTFeedSource> source;
+@property (nonatomic, assign) NSInteger startIndex;
+@property (nonatomic, assign) BOOL subFeed;
 @end
 
 @implementation RTFeedViewController
@@ -40,9 +44,21 @@
     return self;
 }
 
+- (instancetype)initWithSource:(id<RTFeedSource>)source title:(NSString *)title startIndex:(NSInteger)startIndex
+{
+    if ((self = [self init])) {
+        self.title = title;
+        _source = source;
+        _startIndex = startIndex;
+        _subFeed = YES;
+    }
+    return self;
+}
+
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    _scroll.delegate = nil;
 }
 
 - (void)loadView
@@ -103,8 +119,9 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
-                                                                                           target:self action:@selector(refresh)];
+    if (!self.subFeed)
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
+                                                                                               target:self action:@selector(refresh)];
     [self refresh];
 }
 
@@ -118,6 +135,7 @@
 {
     [super viewDidAppear:animated];
     self.visible = YES;
+    [self protectUpcoming];
     [self resumePlayback];
 }
 
@@ -204,6 +222,12 @@
         if (error) RTLog(@"loading more failed: %@", error);
         self.emptyView.hidden = YES;
         self.scroll.hidden = NO;
+        if (before == 0 && self.startIndex > 0 && self.startIndex < (NSInteger)self.items.count) {
+            self.current = self.startIndex;
+            self.startIndex = 0;
+            [self layoutPages:NO];
+            self.scroll.contentOffset = CGPointMake(0, self.current * self.scroll.bounds.size.height);
+        }
         [self layoutPages:NO];
         if (before == 0) [self pageSettled];
     }];
@@ -267,15 +291,20 @@
             [page unload];
         }
     }
-    NSMutableSet *keep = [NSMutableSet set];
-    for (NSInteger i = self.current; i <= self.current + 2 && i < (NSInteger)self.items.count; i++)
-        [keep addObject:RTStr(self.items[(NSUInteger)i][@"id"])];
-    [RTVideoCache shared].protectedIDs = keep;
+    [self protectUpcoming];
     // The next page downloads its own video (preload above); fetch the one after that into the cache too.
     NSInteger ahead = self.current + 2;
     if (ahead < (NSInteger)self.items.count)
         [[RTVideoCache shared] fetchItem:self.items[(NSUInteger)ahead] handler:^(NSString *path, RTHTTPResponse *r, NSError *e) {}];
     if (self.current >= (NSInteger)self.items.count - 3) [self loadMore];
+}
+
+- (void)protectUpcoming
+{
+    NSMutableSet *keep = [NSMutableSet set];
+    for (NSInteger i = self.current; i <= self.current + 2 && i < (NSInteger)self.items.count; i++)
+        [keep addObject:RTStr(self.items[(NSUInteger)i][@"id"])];
+    [RTVideoCache shared].protectedIDs = keep;
 }
 
 - (void)pausePlayback
@@ -302,12 +331,26 @@
 
 - (void)videoPageWantsComments:(RTVideoPage *)page
 {
-    RTAlert(@"Comments", @"Comments arrive in version 2.");
+    if (!page.item) return;
+    UINavigationController *nav = [[UINavigationController alloc]
+        initWithRootViewController:[[RTCommentsViewController alloc] initWithItem:page.item]];
+    nav.navigationBar.barStyle = UIBarStyleBlack;
+    [self presentViewController:nav animated:YES completion:nil];
 }
 
 - (void)videoPageWantsProfile:(RTVideoPage *)page
 {
-    RTAlert([@"@" stringByAppendingString:RTStr(page.item[@"author"])], @"Profiles arrive in version 2.");
+    if (!page.item) return;
+    NSString *secUID = RTStr(page.item[@"sec_uid"]);
+    // Opened from that same profile's grid: go back to it instead of stacking another copy.
+    NSArray *stack = self.navigationController.viewControllers;
+    NSUInteger i = [stack indexOfObject:self];
+    if (i != NSNotFound && i > 0 && [stack[i - 1] isKindOfClass:[RTProfileViewController class]]
+        && [[(RTProfileViewController *)stack[i - 1] secUID] isEqualToString:secUID]) {
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    [self.navigationController pushViewController:[[RTProfileViewController alloc] initWithItem:page.item] animated:YES];
 }
 
 - (void)videoPageWantsShare:(RTVideoPage *)page
