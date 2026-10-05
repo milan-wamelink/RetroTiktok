@@ -44,10 +44,13 @@
     [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
 }
 
+// The whole app must stay under 150 MB: ~0.4 MB binary, up to 100 MB of videos, plus the few protected ones.
+static const NSInteger kRTCacheLimitMaxMB = 100;
+
 + (NSInteger)cacheLimitMB
 {
     NSInteger mb = [[NSUserDefaults standardUserDefaults] integerForKey:@"cacheLimitMB"];
-    return mb > 0 ? mb : 25;
+    return mb > 0 ? MIN(mb, kRTCacheLimitMaxMB) : 25;
 }
 
 + (void)setCacheLimitMB:(NSInteger)mb

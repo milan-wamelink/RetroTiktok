@@ -68,6 +68,7 @@ static const CGFloat kRTGridGap = 1;
 
 @interface RTProfileViewController () <RTFeedSource>
 @property (nonatomic, copy) NSDictionary *seed;
+@property (nonatomic, copy) NSDictionary *hashtag;
 @property (nonatomic, strong) NSDictionary *profile;
 @property (nonatomic, strong) NSMutableArray *items;
 @property (nonatomic, strong) NSMutableSet *itemIDs;
@@ -96,6 +97,15 @@ static const CGFloat kRTGridGap = 1;
         _items = [NSMutableArray array];
         _itemIDs = [NSMutableSet set];
         self.title = [@"@" stringByAppendingString:RTStr(item[@"author"]) ?: @""];
+    }
+    return self;
+}
+
+- (instancetype)initWithHashtag:(NSDictionary *)tag
+{
+    if ((self = [self initWithItem:@{}])) {
+        _hashtag = [tag copy];
+        self.title = [@"#" stringByAppendingString:RTStr(tag[@"title"]) ?: @""];
     }
     return self;
 }
@@ -180,22 +190,42 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
 {
     NSDictionary *p = self.profile ?: self.seed;
     CGFloat w = self.tableView.bounds.size.width;
-    [[RTImageLoader shared] loadPath:RTStr(p[@"avatar_url"]) into:self.avatarView placeholder:[RTTheme avatarPlaceholder]];
-    NSString *nick = RTStr(p[@"nickname"]);
-    self.nameLabel.text = nick.length ? nick : RTStr(p[@"author"]);
-    self.userLabel.text = [@"@" stringByAppendingString:RTStr(p[@"author"]) ?: @""];
-    NSArray *values = @[ p[@"following"] ?: @0, p[@"followers"] ?: @0, p[@"hearts"] ?: @0 ];
-    for (NSUInteger i = 0; i < 3; i++) {
-        UILabel *v = (UILabel *)[self.statLabels[i] viewWithTag:1];
-        v.text = self.profile ? RTShortCount(RTNum(values[i])) : @"-";
+    NSArray *values;
+    if (self.hashtag) {
+        // a hashtag has no avatar: show its first video's cover
+        NSString *thumb = self.items.count ? RTStr(self.items[0][@"thumb_url"]) : nil;
+        [[RTImageLoader shared] loadPath:thumb into:self.avatarView placeholder:[RTTheme avatarPlaceholder]];
+        self.nameLabel.text = self.title;
+        self.userLabel.text = @"Hashtag";
+        values = @[ self.hashtag[@"videos"] ?: @0, self.hashtag[@"views"] ?: @0 ];
+        NSArray *captions = @[ @"Videos", @"Views" ];
+        for (NSUInteger i = 0; i < 3; i++) {
+            UIView *box = self.statLabels[i];
+            box.hidden = i >= values.count;
+            if (box.hidden) continue;
+            ((UILabel *)[box viewWithTag:1]).text = RTShortCount(RTNum(values[i]));
+            ((UILabel *)[box viewWithTag:2]).text = captions[i];
+        }
+        self.bioLabel.text = RTStr(self.hashtag[@"desc"]) ?: @"";
+    } else {
+        [[RTImageLoader shared] loadPath:RTStr(p[@"avatar_url"]) into:self.avatarView placeholder:[RTTheme avatarPlaceholder]];
+        NSString *nick = RTStr(p[@"nickname"]);
+        self.nameLabel.text = nick.length ? nick : RTStr(p[@"author"]);
+        self.userLabel.text = [@"@" stringByAppendingString:RTStr(p[@"author"]) ?: @""];
+        values = @[ p[@"following"] ?: @0, p[@"followers"] ?: @0, p[@"hearts"] ?: @0 ];
+        for (NSUInteger i = 0; i < 3; i++) {
+            UILabel *v = (UILabel *)[self.statLabels[i] viewWithTag:1];
+            v.text = self.profile ? RTShortCount(RTNum(values[i])) : @"-";
+        }
+        self.bioLabel.text = self.profile ? RTStr(self.profile[@"signature"]) : @"";
     }
-    self.bioLabel.text = self.profile ? RTStr(self.profile[@"signature"]) : @"";
 
     self.avatarView.frame = CGRectMake(floor(w / 2 - 42), 16, 84, 84);
     self.nameLabel.frame = CGRectMake(10, 108, w - 20, 22);
     self.userLabel.frame = CGRectMake(10, 130, w - 20, 18);
-    CGFloat colW = floor((w - 20) / 3);
-    for (NSUInteger i = 0; i < 3; i++) {
+    NSUInteger cols = self.hashtag ? 2 : 3;
+    CGFloat colW = floor((w - 20) / cols);
+    for (NSUInteger i = 0; i < cols; i++) {
         UIView *box = self.statLabels[i];
         box.frame = CGRectMake(10 + i * colW, 156, colW, 40);
         [box viewWithTag:1].frame = CGRectMake(0, 0, colW, 22);
@@ -238,7 +268,7 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
     else [self.spinner stopAnimating];
     if (self.loading) self.footerLabel.text = @"";
     else if (self.lastError) self.footerLabel.text = @"Could not load videos. Tap to try again.";
-    else if (self.finished && !self.items.count) self.footerLabel.text = @"No public videos.";
+    else if (self.finished && !self.items.count) self.footerLabel.text = self.hashtag ? @"No videos for this hashtag." : @"No public videos.";
     else self.footerLabel.text = @"";
 }
 
@@ -255,9 +285,9 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
     self.loading = YES;
     self.lastError = nil;
     [self updateFooter];
-    [[RTAwemeAPI shared] loadProfileVideos:self.secUID cursor:self.cursor log:nil
-                                   handler:^(NSDictionary *profile, NSArray *items, NSString *next, NSError *error) {
+    RTProfileHandler done = ^(NSDictionary *profile, NSArray *items, NSString *next, NSError *error) {
         self.loading = NO;
+        BOOL firstPage = !self.items.count;
         NSMutableArray *added = [NSMutableArray array];
         if (error) {
             RTLog(@"profile videos failed: %@", error.localizedDescription);
@@ -276,6 +306,7 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
             }
             self.cursor = next;
             self.finished = next == nil;
+            if (self.hashtag && firstPage && self.items.count) [self updateHeader];
             [self.tableView reloadData];
         }
         [self updateFooter];
@@ -285,7 +316,11 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
         // a page of only photo posts (skipped) adds nothing: go on to the next one
         if (!error && !added.count && !self.finished)
             dispatch_async(dispatch_get_main_queue(), ^{ [self loadMore]; });
-    }];
+    };
+    if (self.hashtag)
+        [[RTAwemeAPI shared] loadHashtagVideos:RTStr(self.hashtag[@"hashtag_id"]) cursor:self.cursor handler:done];
+    else
+        [[RTAwemeAPI shared] loadProfileVideos:self.secUID cursor:self.cursor log:nil handler:done];
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -296,7 +331,10 @@ static UILabel *RTHeaderLabel(CGFloat size, BOOL bold, UIColor *color)
 
 #pragma mark RTFeedSource (for the player opened from the grid)
 
-- (NSString *)sourceName { return @"TikTok web creator/item_list (direct)"; }
+- (NSString *)sourceName
+{
+    return self.hashtag ? @"TikTok web challenge/item_list (direct, X-Bogus)" : @"TikTok web creator/item_list (direct)";
+}
 
 - (void)loadFeedRefresh:(BOOL)refresh log:(RTFeedLog)log handler:(RTFeedHandler)handler
 {

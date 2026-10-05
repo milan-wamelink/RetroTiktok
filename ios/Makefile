@@ -15,7 +15,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME := LegacyTikTok
 
-LegacyTikTok_FILES := $(wildcard src/*.m) src/rt_http.c vendor/mbedtls_glue.c $(wildcard vendor/mbedtls/library/*.c)
+LegacyTikTok_FILES := $(wildcard src/*.m) src/rt_http.c src/rt_xbogus.c vendor/mbedtls_glue.c $(wildcard vendor/mbedtls/library/*.c)
 LegacyTikTok_FRAMEWORKS := UIKit Foundation CoreGraphics QuartzCore AVFoundation CoreMedia Security
 LegacyTikTok_CFLAGS := -Isrc -Ivendor -Ivendor/mbedtls/include -Ivendor/mbedtls/library -Os -fvisibility=hidden \
                        -Wall -Wno-deprecated-declarations -Wno-unknown-warning-option -Wno-nullability-completeness \

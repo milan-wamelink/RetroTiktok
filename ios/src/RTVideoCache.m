@@ -1,4 +1,5 @@
 #import "RTVideoCache.h"
+#import "RTAwemeAPI.h"
 #import "RTSettings.h"
 
 static NSString * const kRTCDNUserAgent = @"AppleCoreMedia/1.0.0.10B329 (iPhone; U; CPU OS 6_1_3 like Mac OS X; en_us)";
@@ -41,7 +42,19 @@ typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
 - (NSString *)cachedPathForID:(NSString *)videoID
 {
     NSString *path = [self pathForID:videoID];
-    return [[NSFileManager defaultManager] fileExistsAtPath:path] ? path : nil;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return nil;
+    if ([RTVideoCache isWebPage:path]) {   // left by builds before 0.6.3
+        [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+        return nil;
+    }
+    return path;
+}
+
+// Some regions answer a video link with a TikTok web page (HTTP 200, text/html) instead of the MP4.
++ (BOOL)isWebPage:(NSString *)path
+{
+    NSData *head = [[NSFileHandle fileHandleForReadingAtPath:path] readDataOfLength:1];
+    return head.length == 1 && ((const char *)head.bytes)[0] == '<';
 }
 
 - (void)fetchItem:(NSDictionary *)item handler:(RTVideoHandler)handler
@@ -57,7 +70,14 @@ typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
     NSMutableArray *list = self.waiting[vid];
     if (list) { [list addObject:[handler copy]]; return; }
     self.waiting[vid] = [NSMutableArray arrayWithObject:[handler copy]];
-    [self tryURLs:RTArr(item[@"video_urls"]) index:0 videoID:vid lastError:nil];
+    NSArray *urls = RTArr(item[@"video_urls"]);
+    if (!RTBool(item[@"needs_fresh_links"])) { [self tryURLs:urls index:0 videoID:vid lastError:nil]; return; }
+    // Hashtag results: links from the creator's own video list play everywhere; the item's own links are the fallback.
+    [[RTAwemeAPI shared] refreshItem:item handler:^(NSDictionary *fresh, NSError *error) {
+        NSArray *first = RTArr(fresh[@"video_urls"]) ?: @[];
+        if (!fresh) RTLog(@"fresh links for %@ failed: %@", vid, error.localizedDescription);
+        [self tryURLs:[first arrayByAddingObjectsFromArray:urls] index:0 videoID:vid lastError:nil];
+    }];
 }
 
 - (void)tryURLs:(NSArray *)urls index:(NSUInteger)i videoID:(NSString *)vid lastError:(NSError *)lastError
@@ -75,6 +95,9 @@ typedef void (^RTVideoHandler)(NSString *, RTHTTPResponse *, NSError *);
         if (!error && resp.bytes < 1024) {
             [[NSFileManager defaultManager] removeItemAtPath:resp.filePath error:NULL];
             error = RTMakeError(-1, @"CDN sent an empty file");
+        } else if (!error && ([resp.contentType hasPrefix:@"text/"] || [RTVideoCache isWebPage:resp.filePath])) {
+            [[NSFileManager defaultManager] removeItemAtPath:resp.filePath error:NULL];
+            error = RTMakeError(-1, @"CDN sent a web page instead of the video");
         }
         if (error) {
             RTLog(@"download %@ from %@ failed: %@", vid, url.host, error.localizedDescription);

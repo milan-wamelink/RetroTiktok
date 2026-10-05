@@ -11,4 +11,12 @@
 - (void)loadReplies:(NSString *)commentID videoID:(NSString *)videoID cursor:(NSString *)cursor handler:(RTCommentsHandler)handler;
 // V3 favorites: fresh video links for a saved item (needs its id, sec_uid and create_time).
 - (void)refreshItem:(NSDictionary *)item handler:(void (^)(NSDictionary *fresh, NSError *error))handler;
+
+// V4 search. TikTok's free-text video/user search needs signatures we can't make, so search is: typing suggestions,
+// hashtags (challenge/detail + challenge/item_list, signed on the phone with X-Bogus) and creators by exact username.
+// Hashtag keys: hashtag_id, title, desc, videos, views. Creator lookups return a profile dictionary (see RTFeedSource.h).
+- (void)loadSuggestions:(NSString *)text handler:(void (^)(NSArray *words, NSError *error))handler;
+- (void)lookupHashtag:(NSString *)name handler:(void (^)(NSDictionary *tag, NSError *error))handler;
+- (void)loadHashtagVideos:(NSString *)tagID cursor:(NSString *)cursor handler:(RTProfileHandler)handler;
+- (void)lookupUser:(NSString *)uniqueID handler:(void (^)(NSDictionary *profile, NSError *error))handler;
 @end

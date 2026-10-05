@@ -1,4 +1,6 @@
 #import "RTAwemeAPI.h"
+#import "rt_xbogus.h"
+#include <time.h>
 #import "RTHTTPClient.h"
 
 static NSString * const kRTAwemeHost = @"https://api19-core-c-useast1a.tiktokv.com";
@@ -330,6 +332,163 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     } handler:^(id result, NSError *error) {
         NSDictionary *r = RTDict(result);
         handler(RTArr(r[@"comments"]) ?: @[], RTNum(r[@"total"]), r[@"next"], error);
+    }];
+}
+
+#pragma mark V4 search
+
+- (NSString *)webDeviceID
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSString *s = [d stringForKey:@"web_device_id"];
+    if (s.length != 19) {
+        NSMutableString *m = [NSMutableString stringWithString:@"73"];
+        for (int i = 0; i < 17; i++) [m appendFormat:@"%u", arc4random_uniform(10)];
+        s = m;
+        [d setObject:s forKey:@"web_device_id"];
+    }
+    return s;
+}
+
+// The hashtag endpoints answer with an empty body unless the request looks like the web app: its full parameter set
+// plus an X-Bogus signature over exactly this query string and User-Agent.
+- (NSString *)signedPath:(NSString *)path params:(NSDictionary *)extra
+{
+    NSMutableDictionary *all = [@{
+        @"aid": @"1988", @"app_language": @"en", @"app_name": @"tiktok_web", @"browser_language": @"en-US",
+        @"browser_name": @"Mozilla", @"browser_online": @"true", @"browser_platform": @"iPhone",
+        @"browser_version": [kRTWebUA substringFromIndex:8], @"channel": @"tiktok_web", @"cookie_enabled": @"true",
+        @"device_id": [self webDeviceID], @"device_platform": @"web_mobile", @"focus_state": @"true", @"history_len": @"3",
+        @"is_fullscreen": @"false", @"is_page_visible": @"true", @"os": @"ios", @"priority_region": @"", @"referer": @"",
+        @"region": @"US", @"screen_height": @"480", @"screen_width": @"320", @"tz_name": @"Europe/Amsterdam",
+        @"webcast_language": @"en"
+    } mutableCopy];
+    [all addEntriesFromDictionary:extra];
+    NSMutableArray *pairs = [NSMutableArray array];
+    for (NSString *k in [[all allKeys] sortedArrayUsingSelector:@selector(compare:)])
+        [pairs addObject:[NSString stringWithFormat:@"%@=%@", k, RTURLEncode(RTStr(all[k]) ?: @"")]];
+    NSString *q = [pairs componentsJoinedByString:@"&"];
+    char sig[29];
+    rt_xbogus(q.UTF8String, kRTWebUA.UTF8String, (unsigned long)time(NULL), sig);
+    return [NSString stringWithFormat:@"%@?%@&X-Bogus=%s", path, q, sig];
+}
+
+- (void)loadSuggestions:(NSString *)text handler:(void (^)(NSArray *words, NSError *error))handler
+{
+    NSString *q = [@"/api/search/general/preview/?aid=1988&keyword=" stringByAppendingString:RTURLEncode(text)];
+    [self web:q attempt:kRTWebAttempts log:nil parse:^id(NSDictionary *json) {
+        NSMutableArray *words = [NSMutableArray array];
+        for (id raw in RTArr(json[@"sug_list"])) {
+            NSString *w = RTStr(RTDict(raw)[@"content"]);
+            if (w.length && ![words containsObject:w]) [words addObject:w];
+        }
+        return words;
+    } handler:^(id result, NSError *error) { handler(RTArr(result) ?: @[], error); }];
+}
+
+- (void)lookupHashtag:(NSString *)name handler:(void (^)(NSDictionary *tag, NSError *error))handler
+{
+    NSString *q = [self signedPath:@"/api/challenge/detail/" params:@{ @"challengeName": name }];
+    [self web:q attempt:1 log:nil parse:^id(NSDictionary *json) {
+        NSDictionary *info = RTDict(json[@"challengeInfo"]);
+        NSDictionary *ch = RTDict(info[@"challenge"]);
+        NSString *tid = RTStr(ch[@"id"]);
+        if (!tid.length) return @{};   // an answer without a hashtag: it doesn't exist (no point retrying)
+        NSDictionary *stats = RTDict(info[@"statsV2"]) ?: RTDict(info[@"stats"]);
+        NSMutableDictionary *t = [NSMutableDictionary dictionary];
+        t[@"hashtag_id"] = tid;
+        t[@"title"] = RTStr(ch[@"title"]) ?: name;
+        t[@"desc"] = RTStr(ch[@"desc"]) ?: @"";
+        t[@"videos"] = @(RTNum(stats[@"videoCount"]));
+        t[@"views"] = @(RTNum(stats[@"viewCount"]));
+        return t;
+    } handler:^(id result, NSError *error) {
+        NSDictionary *t = RTDict(result);
+        if (!error && !RTStr(t[@"hashtag_id"]).length)
+            error = RTMakeError(-1, [NSString stringWithFormat:@"TikTok has no hashtag #%@.", name]);
+        handler(error ? nil : t, error);
+    }];
+}
+
+- (void)loadHashtagVideos:(NSString *)tagID cursor:(NSString *)cursor handler:(RTProfileHandler)handler
+{
+    NSString *q = [self signedPath:@"/api/challenge/item_list/"
+                            params:@{ @"challengeID": tagID ?: @"", @"count": @"12", @"cursor": cursor.length ? cursor : @"0" }];
+    [self web:q attempt:1 log:nil parse:^id(NSDictionary *json) {
+        long long status = RTNum(json[@"statusCode"]) ?: RTNum(json[@"status_code"]);
+        if (status) return [NSString stringWithFormat:@"status %lld %@", status, RTStr(json[@"status_msg"]) ?: @""];
+        NSArray *list = RTArr(json[@"itemList"]);
+        NSMutableArray *items = [NSMutableArray array];
+        for (id raw in list) {
+            NSDictionary *item = [RTAwemeAPI normalizeWebItem:RTDict(raw)];
+            if (item) [items addObject:[RTAwemeAPI preferPlayURL:item]];
+        }
+        NSString *next = (list.count && RTBool(json[@"hasMore"])) ? RTStr(json[@"cursor"]) : nil;
+        if ([next isEqualToString:(cursor.length ? cursor : @"0")]) next = nil;
+        NSMutableDictionary *r = [NSMutableDictionary dictionary];
+        r[@"items"] = items;
+        if (next.length) r[@"next"] = next;
+        return r;
+    } handler:^(id result, NSError *error) {
+        NSDictionary *r = RTDict(result);
+        handler(nil, RTArr(r[@"items"]) ?: @[], r[@"next"], error);
+    }];
+}
+
+// Hashtag results' v16/v19-webapp-prime links answer 403, and their www.tiktok.com/aweme/v1/play/ link gives an MP4 in
+// some regions but a web page in others. RTVideoCache first fetches fresh links from the creator's list (needs_fresh_links).
++ (NSDictionary *)preferPlayURL:(NSDictionary *)item
+{
+    NSMutableArray *play = [NSMutableArray array], *rest = [NSMutableArray array];
+    for (id u in RTArr(item[@"video_urls"]))
+        [([RTStr(u) rangeOfString:@"/aweme/v1/play/"].location != NSNotFound ? play : rest) addObject:u];
+    NSMutableDictionary *m = [item mutableCopy];
+    m[@"video_urls"] = [play arrayByAddingObjectsFromArray:rest];
+    m[@"needs_fresh_links"] = @YES;
+    return m;
+}
+
+// No JSON endpoint answers unsigned for a username, but the creator's page embeds its profile (with secUid) as JSON.
+- (void)lookupUser:(NSString *)uniqueID handler:(void (^)(NSDictionary *profile, NSError *error))handler
+{
+    [self userPage:uniqueID attempt:1 handler:handler];
+}
+
+- (void)userPage:(NSString *)uniqueID attempt:(int)n handler:(void (^)(NSDictionary *profile, NSError *error))handler
+{
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/@%@", kRTWebHost, RTURLEncode(uniqueID)]];
+    NSDictionary *headers = @{ @"User-Agent": kRTWebUA, @"Accept": @"text/html", @"Accept-Language": @"en-US" };
+    [[RTHTTPClient shared] GET:url headers:headers handler:^(RTHTTPResponse *resp, NSError *error) {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSDictionary *profile = nil;
+            BOOL missing = NO;
+            if (!error && resp.status == 200 && resp.data.length) {
+                NSString *html = [[NSString alloc] initWithData:resp.data encoding:NSUTF8StringEncoding];
+                NSRange tag = [html rangeOfString:@"__UNIVERSAL_DATA_FOR_REHYDRATION__"];
+                NSRange open = tag.location == NSNotFound ? tag
+                             : [html rangeOfString:@">" options:0 range:NSMakeRange(NSMaxRange(tag), html.length - NSMaxRange(tag))];
+                NSRange close = open.location == NSNotFound ? open
+                              : [html rangeOfString:@"</script>" options:0 range:NSMakeRange(NSMaxRange(open), html.length - NSMaxRange(open))];
+                if (close.location != NSNotFound) {
+                    NSString *js = [html substringWithRange:NSMakeRange(NSMaxRange(open), close.location - NSMaxRange(open))];
+                    NSDictionary *json = RTDict([NSJSONSerialization JSONObjectWithData:[js dataUsingEncoding:NSUTF8StringEncoding]
+                                                                                options:0 error:NULL]);
+                    NSDictionary *detail = RTDict(RTDict(json[@"__DEFAULT_SCOPE__"])[@"webapp.user-detail"]);
+                    NSDictionary *info = RTDict(detail[@"userInfo"]);
+                    NSDictionary *user = RTDict(info[@"user"]);
+                    if (RTStr(user[@"secUid"]).length)
+                        profile = [RTAwemeAPI normalizeWebProfile:@{ @"author": user, @"authorStats": RTDict(info[@"stats"]) ?: @{} }];
+                    else if (detail) missing = YES;   // the page loaded, but there is no such (public) account
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (profile) { handler(profile, nil); return; }
+                if (missing) { handler(nil, RTMakeError(-1, [NSString stringWithFormat:@"TikTok has no account @%@.", uniqueID])); return; }
+                if (n < kRTWebAttempts) { [self userPage:uniqueID attempt:n + 1 handler:handler]; return; }
+                handler(nil, error ?: RTMakeError(-1, [NSString stringWithFormat:@"Could not load @%@ (HTTP %ld).", uniqueID,
+                                                                                    (long)resp.status]));
+            });
+        });
     }];
 }
 
