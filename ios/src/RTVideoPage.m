@@ -294,11 +294,6 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     RTMain(^{
         if (object != self.playerItem) return;
         if (self.playerItem.status == AVPlayerItemStatusReadyToPlay) {
-            // The very first AVPlayerLayer after a cold start can play audio with no picture on iOS 6;
-            // re-binding the layer once the item is ready makes it pick up the video output.
-            AVPlayerLayer *layer = (AVPlayerLayer *)self.playerView.layer;
-            layer.player = nil;
-            layer.player = self.player;
             [self applySound];
             [self.spinner stopAnimating];
             [UIView animateWithDuration:0.25 animations:^{ self.playerView.alpha = 1; }];
