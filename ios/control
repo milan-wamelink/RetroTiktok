@@ -1,6 +1,6 @@
 Package: nl.retrotok.legacytiktok
 Name: LegacyTikTok
-Version: 0.5.3
+Version: 0.6.0
 Architecture: iphoneos-arm
 Description: Standalone TikTok viewer for iOS 6 (armv7). Talks to TikTok directly with its own TLS (mbedTLS); no server or computer needed.
 Maintainer: milan-wamelink

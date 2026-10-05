@@ -212,8 +212,8 @@ static int conn_line(rt_conn *c, char *out, size_t cap, rt_http_result *r)
             out[n] = 0;
             return (int)n;
         }
-        if (n + 1 >= cap) { set_err(r, "header line too long", 0); return -1; }
-        out[n++] = ch;
+        /* Overlong lines (e.g. TikTok's ~7 KB content-security-policy) are truncated, not fatal. */
+        if (n + 1 < cap) out[n++] = ch;
     }
 }
 
