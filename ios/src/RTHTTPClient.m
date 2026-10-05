@@ -42,6 +42,7 @@ static int RTSinkFile(void *ctx, const unsigned char *d, size_t n)
 
 @interface RTHTTPClient ()
 @property (nonatomic, strong) NSOperationQueue *queue;
+@property (nonatomic, strong) NSOperationQueue *downloadQueue;
 @property (nonatomic, assign) NSInteger rootCount;
 @end
 
@@ -60,6 +61,8 @@ static int RTSinkFile(void *ctx, const unsigned char *d, size_t n)
     if ((self = [super init])) {
         _queue = [[NSOperationQueue alloc] init];
         _queue.maxConcurrentOperationCount = 3;
+        _downloadQueue = [[NSOperationQueue alloc] init];
+        _downloadQueue.maxConcurrentOperationCount = 2;
         NSData *pem = [NSData dataWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"roots" ofType:@"pem"]];
         int n = pem.length ? rt_http_set_roots(pem.bytes, pem.length) : -1;
         _rootCount = n > 0 ? n : 0;
@@ -79,7 +82,7 @@ static int RTSinkFile(void *ctx, const unsigned char *d, size_t n)
 {
     NSString *urlString = url.absoluteString;
     NSString *block = [self headerBlock:headers];
-    [self.queue addOperationWithBlock:^{
+    [(path ? self.downloadQueue : self.queue) addOperationWithBlock:^{
         rt_http_result r;
         NSMutableData *data = path ? nil : [NSMutableData data];
         NSString *part = [path stringByAppendingString:@".part"];

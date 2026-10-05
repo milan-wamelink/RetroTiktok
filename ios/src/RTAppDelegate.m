@@ -1,6 +1,6 @@
 #import "RTAppDelegate.h"
 #import <AVFoundation/AVFoundation.h>
-#import "RTMilestoneViewController.h"
+#import "RTFeedViewController.h"
 #import "RTSettingsViewController.h"
 #import "RTTheme.h"
 
@@ -23,11 +23,11 @@
     [RTTheme applyGlobalAppearance];
     [application setStatusBarStyle:UIStatusBarStyleBlackOpaque animated:NO];
 
-    // V1 milestone 1: the on-device pipeline test. The paged feed (RTFeedViewController) is wired up after it passes.
-    UINavigationController *test = [[UINavigationController alloc] initWithRootViewController:[[RTMilestoneViewController alloc] init]];
+    // The pipeline test (RTMilestoneViewController) lives under Settings.
+    UINavigationController *feed = [[UINavigationController alloc] initWithRootViewController:[[RTFeedViewController alloc] init]];
     UINavigationController *settings = [[UINavigationController alloc] initWithRootViewController:[[RTSettingsViewController alloc] init]];
     RTTabBarController *tabs = [[RTTabBarController alloc] init];
-    tabs.viewControllers = @[ test, settings ];
+    tabs.viewControllers = @[ feed, settings ];
 
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.window.rootViewController = tabs;

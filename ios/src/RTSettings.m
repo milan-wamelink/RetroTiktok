@@ -41,6 +41,7 @@
 + (void)setSoundOn:(BOOL)on
 {
     [[NSUserDefaults standardUserDefaults] setBool:on forKey:@"soundOn"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RTSettingsDidChangeNotification object:nil];
 }
 
 @end

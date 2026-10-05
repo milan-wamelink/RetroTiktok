@@ -1,5 +1,6 @@
 #import "RTFeedViewController.h"
-#import "RTAPI.h"
+#import "RTAwemeAPI.h"
+#import "RTVideoCache.h"
 #import "RTSettings.h"
 #import "RTTheme.h"
 #import "RTVideoPage.h"
@@ -11,12 +12,14 @@
 @property (nonatomic, strong) NSMutableSet *itemIDs;
 @property (nonatomic, assign) NSInteger current;
 @property (nonatomic, assign) BOOL loading;
+@property (nonatomic, assign) NSUInteger generation;
 @property (nonatomic, assign) BOOL visible;
 @property (nonatomic, strong) UIView *emptyView;
 @property (nonatomic, strong) UILabel *emptyLabel;
 @property (nonatomic, strong) UIButton *emptyButton;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) NSDictionary *shareItem;
+@property (nonatomic, strong) id<RTFeedSource> source;
 @end
 
 @implementation RTFeedViewController
@@ -28,6 +31,7 @@
         self.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"For You" image:[RTTheme tabIconHome] tag:0];
         _items = [NSMutableArray array];
         _itemIDs = [NSMutableSet set];
+        _source = [RTAwemeAPI shared];
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self selector:@selector(settingsChanged) name:RTSettingsDidChangeNotification object:nil];
         [nc addObserver:self selector:@selector(pausePlayback) name:UIApplicationWillResignActiveNotification object:nil];
@@ -151,14 +155,12 @@
 
 - (void)emptyButtonTapped
 {
-    if (![[RTAPI shared] hasServer]) self.tabBarController.selectedIndex = 1;
-    else [self refresh];
+    [self refresh];
 }
 
 - (void)settingsChanged
 {
-    if (!self.isViewLoaded) return;
-    [self refresh];
+    for (RTVideoPage *page in self.pages) [page applySound];
 }
 
 - (void)refresh
@@ -172,11 +174,7 @@
     self.current = 0;
     self.scroll.contentOffset = CGPointZero;
     self.loading = NO;
-
-    if (![[RTAPI shared] hasServer]) {
-        [self showEmpty:@"RetroTok needs its server.\n\nStart it on your computer, then enter its address in Settings." button:@"Settings"];
-        return;
-    }
+    self.generation++;
     [self showEmpty:@"" button:nil];
     [self.spinner startAnimating];
     [self loadMore];
@@ -186,11 +184,13 @@
 {
     if (self.loading) return;
     self.loading = YES;
-    [[RTAPI shared] forYou:^(id json, NSError *error) {
+    NSUInteger generation = self.generation;
+    [self.source loadFeedRefresh:(self.items.count == 0) log:nil handler:^(NSArray *items, NSError *error) {
+        if (generation != self.generation) return;
         self.loading = NO;
         [self.spinner stopAnimating];
         NSUInteger before = self.items.count;
-        for (NSDictionary *item in RTArr(RTDict(json)[@"items"])) {
+        for (NSDictionary *item in items) {
             NSString *vid = RTStr(RTDict(item)[@"id"]);
             if (!vid.length || [self.itemIDs containsObject:vid]) continue;
             [self.itemIDs addObject:vid];
@@ -267,10 +267,10 @@
             [page unload];
         }
     }
-    NSMutableArray *ahead = [NSMutableArray array];
-    for (NSInteger i = self.current + 2; i < (NSInteger)self.items.count && i <= self.current + 3; i++)
-        [ahead addObject:RTStr(self.items[(NSUInteger)i][@"id"])];
-    if (ahead.count) [[RTAPI shared] prefetchVideos:ahead];
+    // The next page downloads its own video (preload above); fetch the one after that into the cache too.
+    NSInteger ahead = self.current + 2;
+    if (ahead < (NSInteger)self.items.count)
+        [[RTVideoCache shared] fetchItem:self.items[(NSUInteger)ahead] handler:^(NSString *path, RTHTTPResponse *r, NSError *e) {}];
     if (self.current >= (NSInteger)self.items.count - 3) [self loadMore];
 }
 

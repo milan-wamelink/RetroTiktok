@@ -82,6 +82,11 @@ jobs:
               echo "stubbed $lib"
             fi
           done
+          # libsystem_platform.tbd only lists the _platform_* names for arm, so mbedTLS's plain libc string calls
+          # (memcpy, memchr, ...) do not resolve. On iOS 6 they live in libsystem_c, so declare them there.
+          C="$SDK/usr/lib/system/libsystem_c.tbd"
+          grep -q "_memchr," "$C" || sed -i '0,/symbols: *\[ /s//&_memcpy, _memset, _memmove, _memcmp, _memchr, _strchr, _strcmp, _strncmp, _bzero, _memset_pattern4, _memset_pattern8, _memset_pattern16, /' "$C"
+          grep -q "_memchr," "$C"
 
       - name: Generate icons and launch images
         run: python3 tools/gen_assets.py

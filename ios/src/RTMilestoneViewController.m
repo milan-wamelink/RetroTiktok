@@ -31,7 +31,7 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
 - (instancetype)init
 {
     if ((self = [super init])) {
-        self.title = @"V1 Test";
+        self.title = @"Pipeline Test";
         self.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Test" image:[RTTheme tabIconHome] tag:0];
         _source = [RTAwemeAPI shared];
         _log = [NSMutableString string];
@@ -71,10 +71,11 @@ static void *RTMilestoneStatusContext = &RTMilestoneStatusContext;
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Run" style:UIBarButtonItemStyleBordered
-                                                                             target:self action:@selector(run)];
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Copy Log" style:UIBarButtonItemStyleBordered
-                                                                            target:self action:@selector(copyLog)];
+    UIBarButtonItem *run = [[UIBarButtonItem alloc] initWithTitle:@"Run" style:UIBarButtonItemStyleBordered
+                                                           target:self action:@selector(run)];
+    UIBarButtonItem *copy = [[UIBarButtonItem alloc] initWithTitle:@"Copy Log" style:UIBarButtonItemStyleBordered
+                                                            target:self action:@selector(copyLog)];
+    self.navigationItem.rightBarButtonItems = @[ run, copy ];
     [self run];
 }
 

@@ -1,7 +1,7 @@
 #import "RTVideoPage.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
-#import "RTAPI.h"
+#import "RTVideoCache.h"
 #import "RTImageLoader.h"
 #import "RTSettings.h"
 #import "RTTheme.h"
@@ -196,8 +196,8 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     [self unload];
     self.item = item;
     self.coverView.image = nil;
-    [[RTImageLoader shared] loadPath:RTStr(item[@"cover"]) into:self.coverView placeholder:nil];
-    [[RTImageLoader shared] loadPath:RTStr(item[@"avatar"]) into:self.avatarView placeholder:[RTTheme avatarPlaceholder]];
+    [[RTImageLoader shared] loadPath:RTStr(item[@"cover_url"]) into:self.coverView placeholder:nil];
+    [[RTImageLoader shared] loadPath:RTStr(item[@"avatar_url"]) into:self.avatarView placeholder:[RTTheme avatarPlaceholder]];
 
     self.authorLabel.text = [@"@" stringByAppendingString:RTStr(item[@"author"])];
     self.captionLabel.text = RTStr(item[@"desc"]);
@@ -233,19 +233,17 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
     [self showMessage:nil];
     if (self.active) [self.spinner startAnimating];
     NSUInteger generation = ++self.generation;
-    NSString *videoID = RTStr(self.item[@"id"]);
     __weak RTVideoPage *weakSelf = self;
-    [[RTAPI shared] prepareVideo:videoID handler:^(id json, NSError *error) {
+    [[RTVideoCache shared] fetchItem:self.item handler:^(NSString *path, RTHTTPResponse *response, NSError *error) {
         RTVideoPage *page = weakSelf;
         if (!page || page.generation != generation) return;
         page.preparing = NO;
-        NSString *path = RTStr(RTDict(json)[@"video"]);
         if (error || !path.length) {
             [page.spinner stopAnimating];
-            [page showMessage:[NSString stringWithFormat:@"%@\n\nTap to try again.", error.localizedDescription ?: @"This video could not be prepared."]];
+            [page showMessage:[NSString stringWithFormat:@"%@\n\nTap to try again.", error.localizedDescription ?: @"This video could not be downloaded."]];
             return;
         }
-        [page startPlayerWithURL:[[RTAPI shared] URLForPath:path]];
+        [page startPlayerWithURL:[NSURL fileURLWithPath:path]];
     }];
 }
 

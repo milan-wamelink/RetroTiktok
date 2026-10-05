@@ -1,15 +1,15 @@
 #import "RTSettingsViewController.h"
-#import "RTAPI.h"
+#import "RTAwemeAPI.h"
+#import "RTHTTPClient.h"
+#import "RTMilestoneViewController.h"
 #import "RTSettings.h"
 #import "RTTheme.h"
+#import "RTVideoCache.h"
 
-enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
+enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 
-@interface RTSettingsViewController () <UITextFieldDelegate>
-@property (nonatomic, strong) UITextField *serverField;
-@property (nonatomic, strong) UITextField *keyField;
+@interface RTSettingsViewController () <UIAlertViewDelegate>
 @property (nonatomic, strong) UISwitch *soundSwitch;
-@property (nonatomic, copy) NSString *status;
 @end
 
 @implementation RTSettingsViewController
@@ -23,28 +23,9 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
     return self;
 }
 
-- (UITextField *)fieldWithPlaceholder:(NSString *)placeholder text:(NSString *)text
-{
-    UITextField *f = [[UITextField alloc] initWithFrame:CGRectMake(0, 0, 190, 24)];
-    f.placeholder = placeholder;
-    f.text = text;
-    f.textColor = [UIColor colorWithRed:0.22 green:0.33 blue:0.53 alpha:1];
-    f.font = [UIFont systemFontOfSize:16];
-    f.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    f.autocorrectionType = UITextAutocorrectionTypeNo;
-    f.clearButtonMode = UITextFieldViewModeWhileEditing;
-    f.returnKeyType = UIReturnKeyDone;
-    f.delegate = self;
-    return f;
-}
-
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.serverField = [self fieldWithPlaceholder:@"192.168.1.20:8460" text:[RTSettings serverURL]];
-    self.serverField.keyboardType = UIKeyboardTypeURL;
-    self.keyField = [self fieldWithPlaceholder:@"optional" text:[RTSettings accessKey]];
-    self.keyField.secureTextEntry = YES;
     self.soundSwitch = [[UISwitch alloc] init];
     self.soundSwitch.on = [RTSettings soundOn];
     [self.soundSwitch addTarget:self action:@selector(soundChanged) forControlEvents:UIControlEventValueChanged];
@@ -54,48 +35,29 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 {
     [super viewWillAppear:animated];
     self.navigationController.navigationBar.barStyle = UIBarStyleBlack;
-    [self checkServer];
+    [self.tableView reloadData];
 }
 
 - (BOOL)shouldAutorotate { return NO; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskPortrait; }
-
-- (void)checkServer
-{
-    if (![[RTAPI shared] hasServer]) {
-        self.status = @"Not set";
-        [self.tableView reloadData];
-        return;
-    }
-    self.status = @"Checking...";
-    [self.tableView reloadData];
-    [[RTAPI shared] GET:@"/api/status" timeout:10 handler:^(id json, NSError *error) {
-        NSString *version = RTStr(RTDict(json)[@"version"]);
-        self.status = error ? @"Not reachable" : [NSString stringWithFormat:@"Connected (v%@)", version];
-        [self.tableView reloadData];
-    }];
-}
 
 - (void)soundChanged
 {
     [RTSettings setSoundOn:self.soundSwitch.on];
 }
 
-- (BOOL)textFieldShouldReturn:(UITextField *)textField
+- (NSString *)cacheSummary
 {
-    [textField resignFirstResponder];
-    return YES;
-}
-
-- (void)textFieldDidEndEditing:(UITextField *)textField
-{
-    if (textField == self.serverField) {
-        [RTSettings setServerURL:textField.text];
-        textField.text = [RTSettings serverURL];
-    } else {
-        [RTSettings setAccessKey:textField.text];
+    NSString *dir = [RTVideoCache cacheDirectory];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    unsigned long long bytes = 0;
+    NSUInteger count = 0;
+    for (NSString *name in [fm contentsOfDirectoryAtPath:dir error:NULL]) {
+        if (![name hasSuffix:@".mp4"]) continue;
+        bytes += [[fm attributesOfItemAtPath:[dir stringByAppendingPathComponent:name] error:NULL] fileSize];
+        count++;
     }
-    [self checkServer];
+    return [NSString stringWithFormat:@"%lu videos, %.1f MB", (unsigned long)count, bytes / 1048576.0];
 }
 
 #pragma mark Table
@@ -105,7 +67,7 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
-        case RTSectionServer: return 3;
+        case RTSectionSource: return 3;
         case RTSectionPlayback: return 1;
         default: return 2;
     }
@@ -114,7 +76,7 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
     switch (section) {
-        case RTSectionServer: return @"RetroTok Server";
+        case RTSectionSource: return @"TikTok";
         case RTSectionPlayback: return @"Playback";
         default: return @"About";
     }
@@ -122,10 +84,11 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    if (section == RTSectionServer)
-        return @"Run the RetroTok server on a computer or Raspberry Pi on your Wi-Fi (python3 -m retrotok). It talks to TikTok and converts every video so iOS 6 can play it.";
+    if (section == RTSectionSource)
+        return @"LegacyTikTok talks to TikTok directly with its own TLS. No server or computer is needed. "
+               @"The pipeline test checks every step and shows a log you can copy.";
     if (section == RTSectionAbout)
-        return @"RetroTok is not affiliated with TikTok or ByteDance. It only shows public videos.";
+        return @"LegacyTikTok is not affiliated with TikTok or ByteDance. It only shows public videos.";
     return nil;
 }
 
@@ -133,12 +96,17 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    if (indexPath.section == RTSectionServer) {
-        if (indexPath.row == 0) { cell.textLabel.text = @"Address"; cell.accessoryView = self.serverField; }
-        else if (indexPath.row == 1) { cell.textLabel.text = @"Access Key"; cell.accessoryView = self.keyField; }
-        else {
-            cell.textLabel.text = @"Status";
-            cell.detailTextLabel.text = self.status;
+    if (indexPath.section == RTSectionSource) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Feed";
+            cell.detailTextLabel.text = @"Direct (aweme)";
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"Pipeline Test";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        } else {
+            cell.textLabel.text = @"Video Cache";
+            cell.detailTextLabel.text = [self cacheSummary];
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         }
     } else if (indexPath.section == RTSectionPlayback) {
@@ -157,7 +125,27 @@ enum { RTSectionServer, RTSectionPlayback, RTSectionAbout, RTSectionCount };
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if (indexPath.section == RTSectionServer && indexPath.row == 2) [self checkServer];
+    if (indexPath.section != RTSectionSource) return;
+    if (indexPath.row == 1) {
+        RTMilestoneViewController *test = [[RTMilestoneViewController alloc] init];
+        test.hidesBottomBarWhenPushed = YES;
+        [self.navigationController pushViewController:test animated:YES];
+    } else if (indexPath.row == 2) {
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Clear Video Cache?"
+                                                        message:@"Downloaded videos are deleted. They download again when you watch them."
+                                                       delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Clear", nil];
+        [alert show];
+    }
+}
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
+{
+    if (buttonIndex == alertView.cancelButtonIndex) return;
+    NSString *dir = [RTVideoCache cacheDirectory];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *name in [fm contentsOfDirectoryAtPath:dir error:NULL])
+        if ([name hasSuffix:@".mp4"]) [fm removeItemAtPath:[dir stringByAppendingPathComponent:name] error:NULL];
+    [self.tableView reloadData];
 }
 
 @end

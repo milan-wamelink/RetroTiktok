@@ -1,5 +1,5 @@
 #import "RTImageLoader.h"
-#import "RTAPI.h"
+#import "RTHTTPClient.h"
 #import <objc/runtime.h>
 
 static char kRTWantedKey;
@@ -7,7 +7,23 @@ static char kRTWantedKey;
 @interface RTImageLoader ()
 @property (nonatomic, strong) NSCache *cache;
 @property (nonatomic, strong) NSMutableDictionary *waiting;   // URL string -> array of handlers
+@property (nonatomic, assign) CGFloat screenScale;
+@property (nonatomic, assign) CGFloat maxPixels;
 @end
+
+// TikTok covers are up to 1080x1920; decoding them at full size would cost ~8 MB each on a 512 MB phone.
+static UIImage *RTDecodedImage(NSData *data, CGFloat maxPixels, CGFloat scale)
+{
+    UIImage *src = data.length ? [UIImage imageWithData:data] : nil;
+    if (!src || src.size.width < 1 || src.size.height < 1) return nil;
+    CGFloat f = MIN((CGFloat)1, maxPixels / MAX(src.size.width, src.size.height));
+    CGSize size = CGSizeMake(floor(src.size.width * f) / scale, floor(src.size.height * f) / scale);
+    UIGraphicsBeginImageContextWithOptions(size, YES, scale);
+    [src drawInRect:CGRectMake(0, 0, size.width, size.height)];
+    UIImage *out = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return out;
+}
 
 @implementation RTImageLoader
 
@@ -23,7 +39,10 @@ static char kRTWantedKey;
 {
     if ((self = [super init])) {
         _cache = [[NSCache alloc] init];
-        _cache.totalCostLimit = 12 * 1024 * 1024;
+        _cache.totalCostLimit = 16 * 1024 * 1024;
+        _screenScale = [UIScreen mainScreen].scale;
+        CGSize screen = [UIScreen mainScreen].bounds.size;
+        _maxPixels = MAX(screen.width, screen.height) * _screenScale;
         _waiting = [NSMutableDictionary dictionary];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(clearMemory)
                                                      name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
@@ -35,7 +54,7 @@ static char kRTWantedKey;
 
 - (void)loadPath:(NSString *)path handler:(void (^)(UIImage *))handler
 {
-    if (!path) { if (handler) handler(nil); return; }
+    if (!path.length) { if (handler) handler(nil); return; }
     UIImage *cached = [self.cache objectForKey:path];
     if (cached) { if (handler) handler(cached); return; }
     NSMutableArray *list = self.waiting[path];
@@ -43,12 +62,21 @@ static char kRTWantedKey;
     list = [NSMutableArray array];
     if (handler) [list addObject:[handler copy]];
     self.waiting[path] = list;
-    [[RTAPI shared] dataAtURL:[[RTAPI shared] URLForPath:path] handler:^(NSData *data, NSError *error) {
-        UIImage *image = data ? [UIImage imageWithData:data scale:[UIScreen mainScreen].scale] : nil;
-        if (image) [self.cache setObject:image forKey:path cost:data.length * 4];
+    void (^finish)(UIImage *) = ^(UIImage *image) {
+        if (image) [self.cache setObject:image forKey:path cost:(NSUInteger)(image.size.width * image.size.height * image.scale * image.scale * 4)];
         NSArray *handlers = self.waiting[path];
         [self.waiting removeObjectForKey:path];
         for (void (^h)(UIImage *) in handlers) h(image);
+    };
+    NSURL *url = [NSURL URLWithString:path];
+    if (!url) { finish(nil); return; }
+    CGFloat maxPixels = self.maxPixels, scale = self.screenScale;
+    [[RTHTTPClient shared] GET:url headers:nil handler:^(RTHTTPResponse *resp, NSError *error) {
+        NSData *data = (!error && resp.status == 200) ? resp.data : nil;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            UIImage *image = RTDecodedImage(data, maxPixels, scale);
+            dispatch_async(dispatch_get_main_queue(), ^{ finish(image); });
+        });
     }];
 }
 
@@ -57,7 +85,7 @@ static char kRTWantedKey;
     objc_setAssociatedObject(imageView, &kRTWantedKey, path, OBJC_ASSOCIATION_COPY_NONATOMIC);
     UIImage *cached = path ? [self.cache objectForKey:path] : nil;
     imageView.image = cached ?: placeholder;
-    if (cached || !path) return;
+    if (cached || !path.length) return;
     __weak UIImageView *weakView = imageView;
     [self loadPath:path handler:^(UIImage *image) {
         UIImageView *view = weakView;

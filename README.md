@@ -5,9 +5,10 @@ app in the iOS 6 style that **talks to TikTok directly**. There is no proxy, ser
 
 Not affiliated with TikTok or ByteDance. It only shows public content. No login is needed.
 
-> **Status: V1 milestone 1.** The app currently opens a **V1 Test** screen that runs the whole direct pipeline once
-> and logs every step: mbedTLS handshake, aweme feed request, JSON parse, one video URL, download to the local cache,
-> then looping AVPlayer playback. The swipeable 12-video feed with prefetching comes once this works on a real 4S.
+> **Status: V1 milestone 2.** Milestone 1 (the direct pipeline: mbedTLS handshake, aweme feed, JSON, one video URL,
+> download to cache, looping AVPlayer) passed on a real iPhone 4S / iOS 6.1.3. The app now opens the swipeable
+> **For You** feed: pages of aweme results as you scroll, covers as thumbnails, the next two videos downloaded ahead.
+> The pipeline test is still under **Settings > Pipeline Test**.
 
 ## How it works
 
@@ -40,8 +41,8 @@ Get `nl.retrotok.legacytiktok_*_iphoneos-arm.deb` from the CI artifacts (`Legacy
 yourself (see below).
 
 ```sh
-scp nl.retrotok.legacytiktok_0.2.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
-ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.2.0_iphoneos-arm.deb
+scp nl.retrotok.legacytiktok_0.3.0_iphoneos-arm.deb root@<iphone-ip>:/tmp/
+ssh root@<iphone-ip> dpkg -i /tmp/nl.retrotok.legacytiktok_0.3.0_iphoneos-arm.deb
 ```
 
 Or open the .deb in iFile and tap Install. The package:
@@ -54,9 +55,9 @@ Or open the .deb in iFile and tap Install. The package:
 
 An `.ipa` of the same app is also built, for testing.
 
-### Reporting the milestone 1 test
+### Pipeline test
 
-Open LegacyTikTok. The **Test** tab runs automatically; tap **Run** to repeat. When it finishes (or fails), tap
+Open **Settings > Pipeline Test**. It runs automatically; tap **Run** to repeat. When it finishes (or fails), tap
 **Copy Log** and paste the log into a message. It shows which step failed, the TLS version and cipher, and the
 download speed.
 
@@ -86,7 +87,7 @@ GitHub Actions (`.github/workflows/build.yml`) builds the .deb and an .ipa on ev
 
 | version | what | status |
 |---------|------|--------|
-| V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | **milestone 1 (pipeline test) in progress** |
+| V1 | direct For You feed, vertical swiping, cached playback, prefetch, thumbnails | milestone 1 (pipeline test) passed on a 4S; **feed + pagination + prefetch in testing** |
 | V2 | creator profiles, comments | |
 | V3 | likes / favorites | |
 | V4 | search | |
