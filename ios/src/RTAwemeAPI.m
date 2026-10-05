@@ -413,8 +413,7 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
 - (void)loadHashtagVideos:(NSString *)tagID cursor:(NSString *)cursor handler:(RTProfileHandler)handler
 {
     NSString *q = [self signedPath:@"/api/challenge/item_list/"
-                            params:@{ @"challengeID": tagID ?: @"", @"count": @"12", @"cursor": cursor.length ? cursor : @"0",
-                                      @"coverFormat": @"2" }];
+                            params:@{ @"challengeID": tagID ?: @"", @"count": @"12", @"cursor": cursor.length ? cursor : @"0" }];
     [self web:q attempt:1 log:nil parse:^id(NSDictionary *json) {
         long long status = RTNum(json[@"statusCode"]) ?: RTNum(json[@"status_code"]);
         if (status) return [NSString stringWithFormat:@"status %lld %@", status, RTStr(json[@"status_msg"]) ?: @""];
