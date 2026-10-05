@@ -9,6 +9,7 @@
 
 + (UIImage *)tabIconHome;
 + (UIImage *)tabIconDiscover;
++ (UIImage *)tabIconFavorites;
 + (UIImage *)tabIconSettings;
 + (UIImage *)heartIconFilled:(BOOL)filled;   // 36 pt, white with a soft shadow (red + gloss when filled)
 + (UIImage *)commentIcon;

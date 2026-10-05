@@ -122,6 +122,14 @@ static UIImage *RTOverlayIcon(CGFloat side, void (^shape)(CGContextRef ctx, CGRe
     });
 }
 
++ (UIImage *)tabIconFavorites
+{
+    return RTDraw(CGSizeMake(30, 30), ^(CGContextRef ctx) {
+        [[UIColor blackColor] setFill];
+        [RTHeartPath(CGRectMake(3, 4, 24, 22)) fill];
+    });
+}
+
 + (UIImage *)tabIconSettings
 {
     return RTDraw(CGSizeMake(30, 30), ^(CGContextRef ctx) {

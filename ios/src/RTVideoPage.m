@@ -1,4 +1,5 @@
 #import "RTVideoPage.h"
+#import "RTFavorites.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import "RTVideoCache.h"
@@ -215,7 +216,7 @@ static UILabel *RTOverlayLabel(CGFloat size, BOOL bold)
 
 - (void)updateCounts
 {
-    BOOL liked = RTBool(self.item[@"liked"]);
+    BOOL liked = [[RTFavorites shared] containsID:RTStr(self.item[@"id"])];
     [self.likeButton setImage:[RTTheme heartIconFilled:liked] forState:UIControlStateNormal];
     self.likeLabel.text = RTShortCount(RTNum(self.item[@"likes"]));
     self.commentLabel.text = RTShortCount(RTNum(self.item[@"comments"]));

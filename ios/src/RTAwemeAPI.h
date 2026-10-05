@@ -7,4 +7,6 @@
 @interface RTAwemeAPI : NSObject <RTFeedSource, RTProfileSource>
 + (instancetype)shared;
 + (NSDictionary *)normalizeAweme:(NSDictionary *)aweme;   // nil for photo posts / unplayable items
+// V3 favorites: fresh video links for a saved item (needs its id, sec_uid and create_time).
+- (void)refreshItem:(NSDictionary *)item handler:(void (^)(NSDictionary *fresh, NSError *error))handler;
 @end

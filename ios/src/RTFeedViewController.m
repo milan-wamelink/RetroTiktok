@@ -6,6 +6,7 @@
 #import "RTVideoPage.h"
 #import "RTProfileViewController.h"
 #import "RTCommentsViewController.h"
+#import "RTFavorites.h"
 
 @interface RTFeedViewController () <UIScrollViewDelegate, RTVideoPageDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UIScrollView *scroll;
@@ -39,6 +40,7 @@
         _source = [RTAwemeAPI shared];
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self selector:@selector(settingsChanged) name:RTSettingsDidChangeNotification object:nil];
+        [nc addObserver:self selector:@selector(favoritesChanged) name:RTLikesDidChangeNotification object:nil];
         [nc addObserver:self selector:@selector(pausePlayback) name:UIApplicationWillResignActiveNotification object:nil];
         [nc addObserver:self selector:@selector(resumePlayback) name:UIApplicationDidBecomeActiveNotification object:nil];
     }
@@ -145,12 +147,14 @@
     [self resumePlayback];
 }
 
-// A profile (and its player) was pushed over this feed. The A5 only renders a few AVPlayer videos at once, so a
+// A profile (and its player) was pushed over this feed, or another tab (Favorites has its own player) was chosen. The A5 only renders a few AVPlayer videos at once, so a
 // pushed player that has to share with our paused ones can stay black. Release ours; the files stay cached.
 - (void)viewDidDisappear:(BOOL)animated
 {
     [super viewDidDisappear:animated];
-    if (self.navigationController && self.navigationController.topViewController != self) {
+    UINavigationController *nav = self.navigationController;
+    BOOL otherTab = nav.tabBarController && nav.tabBarController.selectedViewController != nav;
+    if (nav && (nav.topViewController != self || otherTab)) {
         for (RTVideoPage *page in self.pages) [page unload];
         self.releasedPlayers = YES;
     }
@@ -196,6 +200,11 @@
 - (void)settingsChanged
 {
     for (RTVideoPage *page in self.pages) [page applySound];
+}
+
+- (void)favoritesChanged
+{
+    for (RTVideoPage *page in self.pages) [page updateCounts];
 }
 
 - (void)refresh
@@ -347,7 +356,7 @@
 
 - (void)videoPageWantsLike:(RTVideoPage *)page
 {
-    RTAlert(@"Likes", @"Likes and favorites arrive in version 3.");
+    if (page.item) [[RTFavorites shared] toggleItem:page.item];
 }
 
 - (void)videoPageWantsComments:(RTVideoPage *)page

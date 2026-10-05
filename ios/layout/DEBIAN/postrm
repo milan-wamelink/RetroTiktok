@@ -4,6 +4,7 @@ case "$1" in
     remove|purge)
         rm -rf /var/mobile/Library/Caches/nl.retrotok.legacytiktok
         rm -f /var/mobile/Library/Preferences/nl.retrotok.legacytiktok.plist
+        rm -rf /var/mobile/Library/nl.retrotok.legacytiktok
         if [ -x /usr/bin/uicache ]; then
             su mobile -c /usr/bin/uicache >/dev/null 2>&1 || /usr/bin/uicache >/dev/null 2>&1 || true
         fi

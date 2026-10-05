@@ -187,6 +187,7 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     if (avatar) item[@"avatar_url"] = avatar;
     NSString *secUID = RTStr(author[@"sec_uid"]);
     if (secUID.length) item[@"sec_uid"] = secUID;
+    item[@"create_time"] = @(RTNum(a[@"create_time"]));
     return item;
 }
 
@@ -261,6 +262,27 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
         NSDictionary *r = RTDict(result);
         handler(r[@"profile"], RTArr(r[@"items"]) ?: @[], r[@"next"], error);
     }];
+}
+
+// Saved video links expire. creator/item_list pages backwards from an inclusive cursor in milliseconds, so a cursor just
+// after the video's creation time returns that video first, with fresh links.
+- (void)refreshItem:(NSDictionary *)item handler:(void (^)(NSDictionary *fresh, NSError *error))handler
+{
+    NSString *vid = RTStr(item[@"id"]), *sec = RTStr(item[@"sec_uid"]);
+    long long created = RTNum(item[@"create_time"]);
+    if (!vid.length || !sec.length || !created) {
+        RTMain(^{ handler(nil, RTMakeError(-1, @"not enough details saved to look this video up")); });
+        return;
+    }
+    NSString *q = [NSString stringWithFormat:@"/api/creator/item_list/?aid=1988&count=3&type=1&secUid=%@&cursor=%lld",
+                   RTURLEncode(sec), (created + 1) * 1000];
+    [self web:q attempt:kRTWebAttempts - 1 log:nil parse:^id(NSDictionary *json) {
+        for (id raw in RTArr(json[@"itemList"])) {
+            NSDictionary *it = RTDict(raw);
+            if ([RTStr(it[@"id"]) isEqualToString:vid]) return [RTAwemeAPI normalizeWebItem:it] ?: @"video is no longer playable";
+        }
+        return @"video is not in the creator's list";
+    } handler:handler];
 }
 
 - (void)loadComments:(NSString *)videoID cursor:(NSString *)cursor log:(RTFeedLog)log handler:(RTCommentsHandler)handler
@@ -344,6 +366,7 @@ static NSArray *RTMirrorsFirst(NSArray *urls)
     item[@"nickname"] = RTStr(author[@"nickname"]) ?: @"";
     NSString *sec = RTStr(author[@"secUid"]);
     if (sec) item[@"sec_uid"] = sec;
+    item[@"create_time"] = @(RTNum(it[@"createTime"]));
     item[@"video_urls"] = urls;
     item[@"width"] = @(width ?: RTNum(video[@"width"]));
     item[@"height"] = @(height ?: RTNum(video[@"height"]));

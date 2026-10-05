@@ -121,7 +121,7 @@ enum { RTSectionSource, RTSectionPlayback, RTSectionAbout, RTSectionCount };
         cell.detailTextLabel.text = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     } else {
         cell.textLabel.text = @"Coming Next";
-        cell.detailTextLabel.text = @"Profiles, comments";
+        cell.detailTextLabel.text = @"Search";
     }
     return cell;
 }

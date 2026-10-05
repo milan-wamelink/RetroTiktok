@@ -23,4 +23,5 @@
 - (void)deactivate;       // pause and rewind
 - (void)unload;           // drop the player, keep the cover
 - (void)applySound;
+- (void)updateCounts;      // counts and the favorite heart
 @end
